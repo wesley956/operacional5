@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "check:mock-isolation": "node scripts/check-mock-isolation.cjs",
-    "verify": "npm run check:mock-isolation && npm run build && npm run lint && npm run test"
+    "verify": "npm run check:mock-isolation && npm run build && npm run lint && npm run test",
+    "build:singlefile": "vite build --mode singlefile"
   },
   "dependencies": {
     "clsx": "2.1.1",

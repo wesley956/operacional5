@@ -5,9 +5,9 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
-import { DEMO_PRESENCES, getPostName, getProfileName } from '@/lib/mockData';
+import { useEmployees, usePosts, usePresence } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
-import { METHOD_LABELS, type PresenceMethod, type PresenceStatus } from '@/lib/types';
+import { METHOD_LABELS, type Presence, type PresenceMethod, type PresenceStatus } from '@/lib/types';
 import { MapPin, AlertTriangle, CheckCircle, Clock, XCircle, Wifi, WifiOff, QrCode, Cpu } from 'lucide-react';
 
 const METHOD_ICONS: Record<PresenceMethod, React.ReactNode> = {
@@ -28,7 +28,12 @@ export function PresencePage() {
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const presences = DEMO_PRESENCES;
+  const { presences, loading } = usePresence();
+  const { employees } = useEmployees({ active: true });
+  const { posts } = usePosts();
+
+  const getProfileName = (employeeId: string) => employees.find(e => e.id === employeeId)?.name ?? 'Funcionário não encontrado';
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
   const filtered = presences.filter(p => {
     if (methodFilter && p.validation_method !== methodFilter) return false;
     if (statusFilter && p.status !== statusFilter) return false;
@@ -41,7 +46,7 @@ export function PresencePage() {
     {
       key: 'employee',
       header: 'Funcionário',
-      render: (_: typeof presences[0]) => (
+      render: (_: Presence) => (
         <div className="flex items-center gap-2">
           <Avatar name={getProfileName(_.employee_id)} size="sm" />
           <span className="font-medium text-gray-900">{getProfileName(_.employee_id)}</span>
@@ -51,14 +56,14 @@ export function PresencePage() {
     {
       key: 'post',
       header: 'Posto',
-      render: (_: typeof presences[0]) => (
+      render: (_: Presence) => (
         <span className="text-sm text-gray-700">{getPostName(_.post_id)}</span>
       ),
     },
     {
       key: 'method',
       header: 'Método',
-      render: (_: typeof presences[0]) => (
+      render: (_: Presence) => (
         <div className="flex items-center gap-1.5 text-sm">
           {METHOD_ICONS[_.validation_method]}
           {METHOD_LABELS[_.validation_method]}
@@ -68,14 +73,14 @@ export function PresencePage() {
     {
       key: 'time',
       header: 'Horário',
-      render: (_: typeof presences[0]) => (
+      render: (_: Presence) => (
         <span className="text-sm text-gray-600">{formatDateTime(_.confirmed_at)}</span>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (_: typeof presences[0]) => {
+      render: (_: Presence) => {
         const cfg = STATUS_CONFIG[_.status];
         return (
           <Badge variant={cfg.badge}>
@@ -89,7 +94,7 @@ export function PresencePage() {
     {
       key: 'mock',
       header: 'GPS',
-      render: (_: typeof presences[0]) => (
+      render: (_: Presence) => (
         _.is_mock_location
           ? <Badge variant="danger" pulse><AlertTriangle className="w-3 h-3 mr-1" /> Mock</Badge>
           : _.gps_valid
@@ -103,7 +108,7 @@ export function PresencePage() {
     <div>
       <PageHeader
         title="Presença"
-        subtitle={`${presences.length} registros hoje`}
+        subtitle={loading ? 'Carregando presenças...' : `${presences.length} registros hoje`}
         actions={
           <div className="flex items-center gap-2">
             <SelectField
@@ -136,7 +141,7 @@ export function PresencePage() {
           data={filtered}
           keyExtractor={p => p.id}
           onRowClick={p => setSelectedId(p.id)}
-          emptyMessage="Nenhuma presença registrada"
+          emptyMessage={loading ? "Carregando presenças..." : "Nenhuma presença registrada"}
         />
       </Card>
 

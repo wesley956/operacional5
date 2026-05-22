@@ -3,12 +3,25 @@
 // ============================================================
 
 import { PageHeader, Card, Button, Input } from '@/components/ui';
-import { DEMO_COMPANY, DEMO_CLIENT } from '@/lib/mockData';
 import { Building2, MapPin, Phone, Mail, Clock, Shield, Bell, Smartphone, Database, Key } from 'lucide-react';
 
+const COMPANY_META = {
+  name: 'Alpha Segurança',
+  cnpj: '12.345.678/0001-90',
+  phone: '(11) 4002-8922',
+  email: 'operacional@alphaseguranca.com.br',
+  address: 'Av. Paulista, 1000 — São Paulo/SP',
+};
+
+const CLIENT_META = {
+  name: 'Edifícios Corporativos Plaza',
+  contact_name: 'Ricardo Almeida',
+  contact_phone: '(11) 98888-7777',
+};
+
 export function SettingsPage() {
-  const company = DEMO_COMPANY;
-  const client = DEMO_CLIENT;
+  const company = COMPANY_META;
+  const client = CLIENT_META;
 
   return (
     <div>

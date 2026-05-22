@@ -5,19 +5,18 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
-import { DEMO_POSTS, DEMO_POST_STATUS, getProfileName } from '@/lib/mockData';
+import { useEmployees, usePosts } from '@/hooks';
 import { formatDistance } from '@/lib/geo';
 import { cn } from '@/lib/utils';
 import { MapPin, Building2, Wifi, WifiOff, QrCode, Cpu, Plus, Edit, Eye } from 'lucide-react';
-import type { Post } from '@/lib/types';
+import type { OperationalPostStatus, Post } from '@/lib/types';
 
 export function PostsPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
-  const posts = DEMO_POSTS;
-  const statuses = DEMO_POST_STATUS;
-
-  const getStatus = (postId: string) => statuses.find(s => s.post_id === postId);
+  const { posts, getStatus, loading } = usePosts();
+  const { employees } = useEmployees({ active: true });
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
 
   const columns = [
     {
@@ -93,7 +92,7 @@ export function PostsPage() {
     <div>
       <PageHeader
         title="Postos"
-        subtitle={`${posts.length} postos ativos`}
+        subtitle={loading ? 'Carregando postos...' : `${posts.length} postos ativos`}
         actions={
           <Button onClick={() => setShowNewModal(true)}>
             <Plus className="w-4 h-4 mr-1" /> Novo Posto
@@ -107,13 +106,13 @@ export function PostsPage() {
           data={posts}
           keyExtractor={p => p.id}
           onRowClick={setSelectedPost}
-          emptyMessage="Nenhum posto cadastrado"
+          emptyMessage={loading ? "Carregando postos..." : "Nenhum posto cadastrado"}
         />
       </Card>
 
       {/* Post Details Modal */}
       <Modal open={!!selectedPost} onClose={() => setSelectedPost(null)} title="Detalhes do Posto" size="lg">
-        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} />}
+        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} />}
       </Modal>
 
       {/* New Post Modal */}
@@ -156,7 +155,7 @@ export function PostsPage() {
   );
 }
 
-function PostDetails({ post, getStatus }: { post: Post; getStatus: (id: string) => typeof DEMO_POST_STATUS[number] | undefined }) {
+function PostDetails({ post, getStatus, getProfileName }: { post: Post; getStatus: (id: string) => OperationalPostStatus | undefined; getProfileName: (id: string) => string }) {
   const status = getStatus(post.id);
 
   return (

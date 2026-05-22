@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
-import { DEMO_SCHEDULES, DEMO_PROFILES, DEMO_POSTS, getPostName, getProfileName } from '@/lib/mockData';
+import { useEmployees, usePosts, useSchedules } from '@/hooks';
 import { formatDateTime, formatDate } from '@/lib/utils';
 import { ROLE_LABELS, type RegimeTrabalho } from '@/lib/types';
 import { CalendarDays, Plus, AlertTriangle, Clock } from 'lucide-react';
@@ -20,7 +20,13 @@ const REGIME_LABELS: Record<RegimeTrabalho, string> = {
 export function SchedulesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
-  const schedules = DEMO_SCHEDULES;
+  const { schedules, loading } = useSchedules();
+  void loading;
+  const { employees } = useEmployees({ active: true });
+  const { posts } = usePosts();
+
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
   const selected = selectedId ? schedules.find(s => s.id === selectedId) : null;
 
   const columns = [
@@ -32,7 +38,7 @@ export function SchedulesPage() {
           <Avatar name={getProfileName(_.employee_id)} size="sm" />
           <div>
             <p className="font-medium text-gray-900">{getProfileName(_.employee_id)}</p>
-            <p className="text-xs text-gray-500">{ROLE_LABELS[DEMO_PROFILES.find(p => p.id === _.employee_id)?.role ?? 'operador']}</p>
+            <p className="text-xs text-gray-500">{ROLE_LABELS[employees.find(p => p.id === _.employee_id)?.role ?? 'operador']}</p>
           </div>
         </div>
       ),
@@ -200,7 +206,7 @@ export function SchedulesPage() {
             id="sched-employee"
             label="Funcionário"
             placeholder="Selecione..."
-            options={DEMO_PROFILES.filter(p => p.role === 'operador').map(p => ({
+            options={employees.filter(p => p.role === 'operador').map(p => ({
               value: p.id, label: p.name,
             }))}
           />
@@ -208,7 +214,7 @@ export function SchedulesPage() {
             id="sched-post"
             label="Posto"
             placeholder="Selecione..."
-            options={DEMO_POSTS.map(p => ({ value: p.id, label: p.name }))}
+            options={posts.map(p => ({ value: p.id, label: p.name }))}
           />
           <SelectField
             id="sched-regime"

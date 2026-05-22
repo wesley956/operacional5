@@ -6,9 +6,9 @@ import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { SeverityBadge } from '@/components/DashboardComponents';
-import { DEMO_FT_REQUESTS, DEMO_PROFILES, getPostName, getProfileName } from '@/lib/mockData';
+import { useEmployees, useFT, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
-import { type FTRequestStatus } from '@/lib/types';
+import { type FTRequest, type FTRequestStatus } from '@/lib/types';
 import { Siren, Users, Clock, CheckCircle, Phone, MapPin, Plus } from 'lucide-react';
 
 const FT_STATUS_BADGES: Record<FTRequestStatus, 'danger' | 'warning' | 'info' | 'success' | 'default'> = {
@@ -23,57 +23,59 @@ export function FTPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
 
-  const ftRequests = DEMO_FT_REQUESTS;
-  const selected = selectedId ? ftRequests.find(f => f.id === selectedId) : null;
+  const { fts: ftRequests, candidates: availableEmployees, loading } = useFT();
+  const { employees } = useEmployees({ active: true });
+  const { posts } = usePosts();
 
-  // Funcionários disponíveis para FT
-  const availableEmployees = DEMO_PROFILES.filter(p => p.ft_available && p.active);
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
+  const selected = selectedId ? ftRequests.find(f => f.id === selectedId) : null;
 
   const columns = [
     {
       key: 'status',
       header: 'Status',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         <Badge variant={FT_STATUS_BADGES[_.status]}>{_.status}</Badge>
       ),
     },
     {
       key: 'post',
       header: 'Posto',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         <span className="font-medium text-gray-900">{getPostName(_.post_id)}</span>
       ),
     },
     {
       key: 'reason',
       header: 'Motivo',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         <span className="text-sm text-gray-700 capitalize">{_.reason.replace('_', ' ')}</span>
       ),
     },
     {
       key: 'urgency',
       header: 'Urgência',
-      render: (_: typeof ftRequests[0]) => <SeverityBadge severity={_.urgency} />,
+      render: (_: FTRequest) => <SeverityBadge severity={_.urgency} />,
     },
     {
       key: 'opened_by',
       header: 'Aberto por',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         <span className="text-sm text-gray-600">{getProfileName(_.opened_by)}</span>
       ),
     },
     {
       key: 'time',
       header: 'Tempo',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         <span className="text-sm text-gray-600">{formatRelativeTime(_.opened_at)}</span>
       ),
     },
     {
       key: 'assigned',
       header: 'Designado',
-      render: (_: typeof ftRequests[0]) => (
+      render: (_: FTRequest) => (
         _.assigned_to
           ? <div className="flex items-center gap-1"><Avatar name={getProfileName(_.assigned_to)} size="sm" /> <span className="text-sm">{getProfileName(_.assigned_to)}</span></div>
           : <Badge variant="danger">Sem designação</Badge>
@@ -85,7 +87,7 @@ export function FTPage() {
     <div>
       <PageHeader
         title="Força Tarefa"
-        subtitle={`${ftRequests.filter(f => f.status === 'aberta').length} FTs abertas`}
+        subtitle={loading ? 'Carregando FTs...' : `${ftRequests.filter(f => f.status === 'aberta').length} FTs abertas`}
         actions={
           <Button onClick={() => setShowAssignModal(true)}>
             <Plus className="w-4 h-4 mr-1" /> Nova FT
@@ -147,7 +149,7 @@ export function FTPage() {
           data={ftRequests}
           keyExtractor={f => f.id}
           onRowClick={f => setSelectedId(f.id)}
-          emptyMessage="Nenhuma FT registrada"
+          emptyMessage={loading ? "Carregando FTs..." : "Nenhuma FT registrada"}
         />
       </Card>
 

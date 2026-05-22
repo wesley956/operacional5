@@ -6,11 +6,11 @@ import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { SeverityBadge } from '@/components/DashboardComponents';
-import { DEMO_OCCURRENCES, getPostName, getProfileName } from '@/lib/mockData';
+import { useEmployees, useOccurrences, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
 import {
   OCCURRENCE_TYPE_LABELS, SEVERITY_LABELS,
-  type OccurrenceType, type OccurrenceStatus,
+  type Occurrence, type OccurrenceType, type OccurrenceStatus,
 } from '@/lib/types';
 import {
   FileWarning, Plus, AlertTriangle, Siren, Eye, CheckCircle,
@@ -41,7 +41,12 @@ export function OccurrencesPage() {
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const occurrences = DEMO_OCCURRENCES;
+  const { occurrences, loading } = useOccurrences();
+  const { employees } = useEmployees({ active: true });
+  const { posts } = usePosts();
+
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
   const filtered = occurrences.filter(o => {
     if (severityFilter && o.severity !== severityFilter) return false;
     if (statusFilter && o.status !== statusFilter) return false;
@@ -54,7 +59,7 @@ export function OccurrencesPage() {
     {
       key: 'type',
       header: 'Tipo',
-      render: (_: typeof occurrences[0]) => (
+      render: (_: Occurrence) => (
         <div className="flex items-center gap-2">
           {OCCURRENCE_ICONS[_.type]}
           <span className="font-medium text-gray-900">{OCCURRENCE_TYPE_LABELS[_.type]}</span>
@@ -64,19 +69,19 @@ export function OccurrencesPage() {
     {
       key: 'severity',
       header: 'Severidade',
-      render: (_: typeof occurrences[0]) => <SeverityBadge severity={_.severity} />,
+      render: (_: Occurrence) => <SeverityBadge severity={_.severity} />,
     },
     {
       key: 'post',
       header: 'Posto',
-      render: (_: typeof occurrences[0]) => (
+      render: (_: Occurrence) => (
         <span className="text-sm text-gray-700">{getPostName(_.post_id)}</span>
       ),
     },
     {
       key: 'employee',
       header: 'Autor',
-      render: (_: typeof occurrences[0]) => (
+      render: (_: Occurrence) => (
         <div className="flex items-center gap-2">
           <Avatar name={getProfileName(_.employee_id)} size="sm" />
           <span className="text-sm">{getProfileName(_.employee_id)}</span>
@@ -86,14 +91,14 @@ export function OccurrencesPage() {
     {
       key: 'time',
       header: 'Quando',
-      render: (_: typeof occurrences[0]) => (
+      render: (_: Occurrence) => (
         <span className="text-sm text-gray-600">{formatRelativeTime(_.created_at)}</span>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (_: typeof occurrences[0]) => (
+      render: (_: Occurrence) => (
         <Badge variant={STATUS_BADGES[_.status]}>{_.status.replace('_', ' ')}</Badge>
       ),
     },
@@ -103,7 +108,7 @@ export function OccurrencesPage() {
     <div>
       <PageHeader
         title="Ocorrências"
-        subtitle={`${occurrences.length} ocorrências registradas`}
+        subtitle={loading ? 'Carregando ocorrências...' : `${occurrences.length} ocorrências registradas`}
         actions={
           <div className="flex items-center gap-2">
             <SelectField
@@ -140,7 +145,7 @@ export function OccurrencesPage() {
           data={filtered}
           keyExtractor={o => o.id}
           onRowClick={o => setSelectedId(o.id)}
-          emptyMessage="Nenhuma ocorrência encontrada"
+          emptyMessage={loading ? "Carregando ocorrências..." : "Nenhuma ocorrência encontrada"}
         />
       </Card>
 

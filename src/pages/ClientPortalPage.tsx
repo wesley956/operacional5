@@ -3,7 +3,7 @@
 // ============================================================
 
 import { PageHeader, Card, Badge, Button } from '@/components/ui';
-import { DEMO_CLIENT_PORTAL, DEMO_OCCURRENCES } from '@/lib/mockData';
+import { useOccurrences, useRealtimeDashboard } from '@/hooks';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import {
   Building2, Eye, Clock, Users,
@@ -12,7 +12,33 @@ import {
 } from 'lucide-react';
 
 export function ClientPortalPage() {
-  const portal = DEMO_CLIENT_PORTAL;
+  const { postStatuses, summary } = useRealtimeDashboard();
+  const { occurrences } = useOccurrences();
+
+  const activePosts = summary?.total_posts ?? postStatuses.length;
+  const coveredPosts = summary?.cobertos ?? postStatuses.filter(p => p.status === 'coberto').length;
+  const coverage = activePosts > 0 ? (coveredPosts / activePosts) * 100 : 0;
+
+  const portal = {
+    client_name: 'Edifícios Corporativos Plaza',
+    total_posts: activePosts,
+    active_posts: activePosts,
+    current_shift_coverage: coverage,
+    occurrences_today: occurrences.length,
+    pending_items: postStatuses.filter(p => p.status !== 'coberto').length,
+    posts: postStatuses.map(post => ({
+      name: post.post_name,
+      status:
+        post.status === 'coberto' ? 'Coberto' :
+        post.status === 'sos_ativo' ? 'SOS Ativo' :
+        post.status === 'critico' ? 'Crítico' :
+        post.status === 'descoberto' ? 'Descoberto' :
+        'Atenção',
+      vigilantes: post.confirmed_count,
+      min_staff: post.min_staff,
+      last_incident: post.last_occurrence_at,
+    })),
+  };
 
   const coverageColor = portal.current_shift_coverage >= 90
     ? 'text-green-600' : portal.current_shift_coverage >= 70
@@ -143,10 +169,10 @@ export function ClientPortalPage() {
       <Card className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-900">Ocorrências Recentes</h3>
-          <Badge variant="info">{DEMO_OCCURRENCES.length}</Badge>
+          <Badge variant="info">{occurrences.length}</Badge>
         </div>
         <div className="space-y-3">
-          {DEMO_OCCURRENCES.slice(0, 3).map(occ => (
+          {occurrences.slice(0, 3).map(occ => (
             <div key={occ.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className={cn(

@@ -10,27 +10,47 @@ import {
   StatCard, PostStatusCard, AlertCard, DASHBOARD_ICONS,
 } from '@/components/DashboardComponents';
 import {
-  DEMO_DASHBOARD, DEMO_POST_STATUS, DEMO_ALERTS,
-  DEMO_OCCURRENCES, DEMO_FT_REQUESTS, getProfileName, getPostName,
-} from '@/lib/mockData';
+  useEmployees,
+  useFT,
+  useNotifications,
+  useOccurrences,
+  usePosts,
+  useRealtimeDashboard,
+} from '@/hooks';
 import { RefreshCw, ListFilter } from 'lucide-react';
 
 export function DashboardPage() {
   const profile = useProfile();
   const permissions = getPermissions(profile.role);
   const [filterCritical, setFilterCritical] = useState(false);
-  const summary = DEMO_DASHBOARD;
-  const postStatuses = DEMO_POST_STATUS;
-  const alerts = DEMO_ALERTS;
-  const occurrences = DEMO_OCCURRENCES;
+  const { summary, postStatuses, loading: dashboardLoading, refresh } = useRealtimeDashboard();
+  const { notifications: alerts } = useNotifications();
+  const { occurrences } = useOccurrences();
+  const { fts: ftRequests } = useFT();
+  const { employees } = useEmployees({ active: true });
+  const { posts } = usePosts();
+
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
 
   const filteredAlerts = filterCritical
-    ? alerts.filter(a => a.type === 'sos' || a.type === 'ocorrencia_critica')
+    ? alerts.filter(a => a.type === 'sos' || a.type === 'occurrence' || a.type === 'escalation' || a.severity === 'critical')
     : alerts;
 
   const filteredPosts = filterCritical
     ? postStatuses.filter(p => p.status === 'critico' || p.status === 'sos_ativo' || p.status === 'descoberto')
     : postStatuses;
+
+  if (dashboardLoading || !summary) {
+    return (
+      <div>
+        <PageHeader title="Dashboard Operacional" subtitle="Carregando visão operacional..." />
+        <Card>
+          <p className="text-sm text-gray-500 text-center py-12">Carregando dashboard...</p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -49,7 +69,7 @@ export function DashboardPage() {
               <ListFilter className="w-4 h-4" />
               {filterCritical ? 'Mostrar tudo' : 'Críticos'}
             </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">
+            <button onClick={() => void refresh()} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
@@ -174,15 +194,14 @@ export function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {filteredAlerts.map(alert => {
-                const isCritical = alert.type === 'sos' || alert.type === 'ocorrencia_critica';
-                const payload = alert.payload as Record<string, string> | undefined;
+                const isCritical = alert.type === 'sos' || alert.type === 'occurrence' || alert.type === 'escalation' || alert.severity === 'critical';
                 return (
                   <AlertCard
                     key={alert.id}
                     type={alert.type}
-                    message={payload?.message ?? 'Sem detalhes'}
-                    time={formatRelativeTime(alert.sent_at)}
-                    postName={alert.post_id ? getPostName(alert.post_id) : undefined}
+                    message={alert.message ?? alert.title ?? 'Sem detalhes'}
+                    time={formatRelativeTime(alert.created_at)}
+                    postName={alert.post_name}
                     isCritical={isCritical}
                     onAck={permissions.canAckAlert ? () => {} : undefined}
                     onView={() => {}}
@@ -199,10 +218,10 @@ export function DashboardPage() {
           )}
 
           {/* FT Requests */}
-          {permissions.canViewFT && DEMO_FT_REQUESTS.length > 0 && (
+          {permissions.canViewFT && ftRequests.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-2">FTs Abertas</h3>
-              {DEMO_FT_REQUESTS.map(ft => (
+              {ftRequests.map(ft => (
                 <Card key={ft.id} className="mb-2">
                   <div className="flex items-center justify-between">
                     <div>

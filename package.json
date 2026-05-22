@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "check:mock-isolation": "node scripts/check-mock-isolation.cjs",
+    "verify": "npm run check:mock-isolation && npm run build && npm run lint && npm run test"
   },
   "dependencies": {
     "@testing-library/jest-dom": "^6.9.1",

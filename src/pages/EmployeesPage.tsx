@@ -5,8 +5,8 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
-import { DEMO_PROFILES } from '@/lib/mockData';
-import { ROLE_LABELS, type Role } from '@/lib/types';
+import { useEmployees } from '@/hooks';
+import { ROLE_LABELS, type Role, type Profile } from '@/lib/types';
 import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX } from 'lucide-react';
 
 const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'default'> = {
@@ -23,7 +23,7 @@ export function EmployeesPage() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>('');
 
-  const employees = DEMO_PROFILES.filter(e => e.active);
+  const { employees, loading } = useEmployees({ active: true });
   const filtered = roleFilter ? employees.filter(e => e.role === roleFilter) : employees;
   const selected = selectedId ? employees.find(e => e.id === selectedId) : null;
 
@@ -31,7 +31,7 @@ export function EmployeesPage() {
     {
       key: 'name_full',
       header: 'Nome',
-      render: (_p: typeof employees[0]) => (
+      render: (_p: Profile) => (
         <div className="flex items-center gap-3">
           <Avatar name={_p.name} />
           <div>
@@ -44,21 +44,21 @@ export function EmployeesPage() {
     {
       key: 'role',
       header: 'Cargo',
-      render: (p: typeof employees[0]) => (
+      render: (p: Profile) => (
         <Badge variant={ROLE_BADGES[p.role]}>{ROLE_LABELS[p.role]}</Badge>
       ),
     },
     {
       key: 'phone',
       header: 'Telefone',
-      render: (p: typeof employees[0]) => (
+      render: (p: Profile) => (
         <span className="text-sm text-gray-600">{p.phone ?? '—'}</span>
       ),
     },
     {
       key: 'ft',
       header: 'FT',
-      render: (p: typeof employees[0]) => (
+      render: (p: Profile) => (
         p.ft_available
           ? <Badge variant="success">Disponível</Badge>
           : <Badge variant="default">—</Badge>
@@ -67,7 +67,7 @@ export function EmployeesPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (p: typeof employees[0]) => (
+      render: (p: Profile) => (
         p.active
           ? <span className="flex items-center gap-1 text-sm text-green-600"><UserCheck className="w-3.5 h-3.5" /> Ativo</span>
           : <span className="flex items-center gap-1 text-sm text-gray-400"><UserX className="w-3.5 h-3.5" /> Inativo</span>
@@ -76,7 +76,7 @@ export function EmployeesPage() {
     {
       key: 'actions',
       header: '',
-      render: (p: typeof employees[0]) => (
+      render: (p: Profile) => (
         <button onClick={(e) => { e.stopPropagation(); setSelectedId(p.id); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600">
           <Eye className="w-4 h-4" />
         </button>
@@ -88,7 +88,7 @@ export function EmployeesPage() {
     <div>
       <PageHeader
         title="Funcionários"
-        subtitle={`${employees.length} funcionários ativos`}
+        subtitle={loading ? 'Carregando funcionários...' : `${employees.length} funcionários ativos`}
         actions={
           <div className="flex items-center gap-2">
             <SelectField
@@ -112,7 +112,7 @@ export function EmployeesPage() {
           data={filtered}
           keyExtractor={e => e.id}
           onRowClick={e => setSelectedId(e.id)}
-          emptyMessage="Nenhum funcionário encontrado"
+          emptyMessage={loading ? "Carregando funcionários..." : "Nenhum funcionário encontrado"}
         />
       </Card>
 

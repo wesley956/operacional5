@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal } from '@/components/ui';
-import { DEMO_RONDA_POINTS, DEMO_RONDA_LOGS, getPostName, getProfileName, getRondaPointName } from '@/lib/mockData';
+import { useEmployees, usePosts, useRondas } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
 import { Search, CheckCircle, Clock, XCircle, AlertTriangle, MapPin, Camera, QrCode } from 'lucide-react';
 
@@ -19,8 +19,15 @@ export function RondasPage() {
   const [selectedPostFilter, setSelectedPostFilter] = useState<string>('');
   const [selectedLog, setSelectedLog] = useState<string | null>(null);
 
-  const points = DEMO_RONDA_POINTS;
-  const logs = DEMO_RONDA_LOGS;
+  const { posts } = usePosts();
+  const defaultPostId = posts[0]?.id;
+  const { points, logs, loading } = useRondas(defaultPostId);
+  void loading;
+  const { employees } = useEmployees({ active: true });
+
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const getRondaPointName = (pointId: string) => points.find(p => p.id === pointId)?.name ?? 'Ponto não encontrado';
 
   const filteredPoints = selectedPostFilter
     ? points.filter(p => p.post_id === selectedPostFilter)

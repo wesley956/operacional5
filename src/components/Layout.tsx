@@ -11,7 +11,7 @@ import {
   Siren, CalendarDays, Settings, Shield, Menu, X, LogOut,
   Bell, ChevronRight, User,
 } from 'lucide-react';
-import { DEMO_ALERTS, DEMO_POST_STATUS } from '@/lib/mockData';
+import { useNotifications, useRealtimeDashboard } from '@/hooks';
 import { ROLE_LABELS } from '@/lib/types';
 
 // --- Navigation Items ---
@@ -135,8 +135,11 @@ function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
   const profile = useProfile();
   const { logout } = useAuth();
 
-  const unreadAlerts = DEMO_ALERTS.filter(a => !a.acknowledged_at).length;
-  const sosActive = DEMO_POST_STATUS.some(p => p.status === 'sos_ativo');
+  const { unreadCount } = useNotifications();
+  const { postStatuses } = useRealtimeDashboard();
+
+  const unreadAlerts = unreadCount;
+  const sosActive = postStatuses.some(p => p.status === 'sos_ativo');
 
   return (
     <header className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3">

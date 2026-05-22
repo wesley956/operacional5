@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge, Modal, Button } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
-import { DEMO_HANDOVERS, getPostName, getProfileName } from '@/lib/mockData';
+import { useEmployees, useHandovers, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
 import { ArrowRightLeft, Clock, AlertTriangle, CheckCircle, AlertCircle, User } from 'lucide-react';
 
@@ -17,7 +17,13 @@ const STATUS_CONFIG = {
 
 export function HandoverPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const handovers = DEMO_HANDOVERS;
+  const { handovers, loading } = useHandovers();
+  void loading;
+  const { posts } = usePosts();
+  const { employees } = useEmployees({ active: true });
+
+  const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
+  const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const selected = selectedId ? handovers.find(h => h.id === selectedId) : null;
 
   const confirmed = handovers.filter(h => h.status === 'confirmada').length;

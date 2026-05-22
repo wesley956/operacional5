@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { PageHeader, Card, Badge, Button, SelectField } from '@/components/ui';
-import { DEMO_REPORTS, DEMO_FT_AUTO_ACTIONS } from '@/lib/mockData';
+import { useReports } from '@/hooks';
 import { formatDate, formatRelativeTime, cn } from '@/lib/utils';
 import {
   FileText, Download, TrendingUp, Users,
@@ -30,7 +30,10 @@ export function ReportsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
-  const reports = DEMO_REPORTS;
+  const { daily, weekly, loading } = useReports();
+  void loading;
+  const reports = [daily, weekly].filter((report): report is NonNullable<typeof daily> => report !== null);
+  const ftAutoActions: Array<{ id: string; type: string; post_name: string; description: string; timestamp: string; automated: boolean }> = [];
   const filtered = typeFilter ? reports.filter(r => r.type === typeFilter) : reports;
   const selectedReport = selectedReportId ? reports.find(r => r.id === selectedReportId) : null;
 
@@ -150,7 +153,7 @@ export function ReportsPage() {
 
         <Card padding={false}>
           <div className="divide-y divide-gray-100">
-            {DEMO_FT_AUTO_ACTIONS.map(action => (
+            {ftAutoActions.map(action => (
               <div key={action.id} className="p-4 flex items-start gap-3 hover:bg-gray-50 transition-colors">
                 <div className={cn(
                   'p-1.5 rounded-lg flex-shrink-0',

@@ -14,6 +14,8 @@ import type {
   DashboardSummary, Role, PresenceMethod, Severity,
   OccurrenceType, FTReason, HandoverStatus,
 } from '../types';
+import { createDemoAdapter } from './adapters/demo-adapter';
+import { createSupabaseAdapter } from './adapters/supabase-adapter';
 
 // --- Repository Interfaces ---
 
@@ -370,13 +372,19 @@ export function setDataProvider(provider: IDataProvider): void {
 }
 
 export function getDataProvider(): IDataProvider {
-  if (!_provider) {
-    // Lazy init: carrega demo adapter por padrão
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('./adapters/demo-adapter');
-    _provider = mod.createDemoAdapter();
+  if (_provider) return _provider;
+
+  const demoMode = import.meta.env.VITE_DEMO_MODE !== 'false';
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!demoMode && supabaseUrl && supabaseAnonKey) {
+    _provider = createSupabaseAdapter(supabaseUrl, supabaseAnonKey);
+    return _provider;
   }
-  return _provider!;
+
+  _provider = createDemoAdapter();
+  return _provider;
 }
 
 export function hasDataProvider(): boolean {

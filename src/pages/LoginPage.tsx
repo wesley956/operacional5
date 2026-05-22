@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Card } from '@/components/ui';
-import { DEMO_USERS } from '@/lib/mockData';
+import { useEmployees } from '@/hooks';
 import { ROLE_LABELS, type Role } from '@/lib/types';
 import { Shield, Eye, EyeOff, LogIn } from 'lucide-react';
 
@@ -19,24 +19,27 @@ const ROLE_COLORS: Record<Role, string> = {
 };
 
 export function LoginPage() {
-  const { loginDemo } = useAuth();
+  const { login, loginDemo } = useAuth();
+  const { employees } = useEmployees({ active: true });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = () => {
+  const demoUsers = employees.filter(user => user.role in ROLE_COLORS);
+
+  const handleLogin = async () => {
     setLoading(true);
     setError('');
-    // Demo: login por email
-    const demoUser = DEMO_USERS.find(u => u.profile.email === email);
-    if (demoUser) {
-      loginDemo(demoUser.role);
-    } else {
-      setError('Email não encontrado no demo. Use os botões abaixo para acesso rápido.');
+
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -104,13 +107,13 @@ export function LoginPage() {
             <p className="text-xs text-gray-500">Clique para entrar como um perfil de demonstração</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {DEMO_USERS.map(user => (
+            {demoUsers.map(user => (
               <button
-                key={user.role}
-                onClick={() => loginDemo(user.role)}
+                key={user.id}
+                onClick={() => void loginDemo(user.role)}
                 className={`flex flex-col items-center gap-1 p-3 rounded-lg text-xs font-medium transition-all ${ROLE_COLORS[user.role]}`}
               >
-                <span className="font-bold">{user.label.split(' ')[0]}</span>
+                <span className="font-bold">{user.name.split(' ')[0]}</span>
                 <span className="opacity-80">{ROLE_LABELS[user.role]}</span>
               </button>
             ))}

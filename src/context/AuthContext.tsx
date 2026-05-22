@@ -2,15 +2,15 @@
 // OPERACIONAL5 — Contexto de Autenticação (Final)
 // ============================================================
 // Suporta dois modos:
-// 1. DEMO_MODE=true  → usa perfis demo em memória
+// 1. DEMO_MODE=true  → usa o DataProvider demo
 // 2. DEMO_MODE=false → usa Supabase Auth (preparado)
 // ============================================================
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { Profile, Role } from '@/lib/types';
-import { DEMO_PROFILES } from '@/lib/mockData';
+import { getDataProvider } from '@/lib/data/data-provider';
 
-export const DEMO_MODE = true; // Trocar para false quando Supabase estiver configurado
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -21,7 +21,7 @@ export interface AuthState {
 
 export interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>;
-  loginDemo: (role: Role) => void;
+  loginDemo: (role: Role) => Promise<void>;
   logout: () => void;
 }
 
@@ -35,37 +35,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mode: DEMO_MODE ? 'demo' : 'supabase',
   });
 
-  const loginDemo = useCallback((role: Role) => {
-    const profile = DEMO_PROFILES.find(p => p.role === role);
-    if (profile) {
-      setState({ isAuthenticated: true, profile, isLoading: false, mode: 'demo' });
+  const loginDemo = useCallback(async (role: Role) => {
+    const dp = getDataProvider();
+    const profiles = await dp.employees.list({ role, active: true });
+    const profile = profiles[0];
+
+    if (!profile) {
+      throw new Error(`Nenhum perfil demo encontrado para o cargo ${role}.`);
     }
+
+    setState({ isAuthenticated: true, profile, isLoading: false, mode: 'demo' });
   }, []);
 
-  const login = useCallback(async (_email: string, _password: string) => {
-    if (DEMO_MODE) {
-      // Demo mode: login por email
-      const profile = DEMO_PROFILES.find(p => p.email === _email);
-      if (profile) {
+  const login = useCallback(async (email: string, _password: string) => {
+    setState(prev => ({ ...prev, isLoading: true }));
+
+    try {
+      if (DEMO_MODE) {
+        const dp = getDataProvider();
+        const profiles = await dp.employees.list({ active: true });
+        const profile = profiles.find(p => p.email === email);
+
+        if (!profile) {
+          throw new Error('Email não encontrado no demo.');
+        }
+
         setState({ isAuthenticated: true, profile, isLoading: false, mode: 'demo' });
-      } else {
-        throw new Error('Email não encontrado no demo.');
+        return;
       }
-    } else {
-      // Supabase mode: usar supabase.auth.signInWithPassword
+
+      // Supabase mode:
       // const supabase = createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY);
       // const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       // if (error) throw error;
       // const profile = await fetchProfile(data.user.id);
       // setState({ isAuthenticated: true, profile, isLoading: false, mode: 'supabase' });
       throw new Error('Supabase não configurado. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
+    } catch (error) {
+      setState(prev => ({ ...prev, isLoading: false }));
+      throw error;
     }
   }, []);
 
   const logout = useCallback(() => {
-    setState({ isAuthenticated: false, profile: null, isLoading: false, mode: state.mode });
+    setState(prev => ({ isAuthenticated: false, profile: null, isLoading: false, mode: prev.mode }));
     // Em Supabase: await supabase.auth.signOut();
-  }, [state.mode]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ ...state, login, loginDemo, logout }}>

@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Button } from '@/components/ui';
-import { DEMO_PROFILES, DEMO_COMPANY } from '@/lib/mockData';
+import { useEmployees } from '@/hooks';
 import { formatDateTime } from '@/lib/utils';
 import { ROLE_LABELS } from '@/lib/types';
 import { Shield, Users, Database, Activity, AlertTriangle, Key, Eye } from 'lucide-react';
@@ -17,13 +17,20 @@ const MOCK_AUDIT = [
   { id: 'aud-005', actor: 'Carlos Mendes', action: 'ft_open', entity: 'ft_request', entity_id: 'ft-001', time: new Date(Date.now() - 2100000).toISOString() },
 ];
 
+const COMPANY_META = {
+  name: 'Alpha Segurança',
+  cnpj: '12.345.678/0001-90',
+  created_at: '2026-01-01T06:00:00.000Z',
+};
+
 export function AdminPage() {
   const [showAuditDetail, setShowAuditDetail] = useState(false);
+  const { employees } = useEmployees();
 
   const systemStats = {
-    totalUsers: DEMO_PROFILES.length,
-    activeUsers: DEMO_PROFILES.filter(p => p.active).length,
-    company: DEMO_COMPANY.name,
+    totalUsers: employees.length,
+    activeUsers: employees.filter(p => p.active).length,
+    company: COMPANY_META.name,
     version: '1.0.0-mvp1',
   };
 
@@ -134,7 +141,7 @@ export function AdminPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500">CNPJ</p>
-            <p className="text-sm font-medium text-gray-900">{DEMO_COMPANY.cnpj}</p>
+            <p className="text-sm font-medium text-gray-900">{COMPANY_META.cnpj}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Status</p>
@@ -142,7 +149,7 @@ export function AdminPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500">Criada em</p>
-            <p className="text-sm font-medium text-gray-900">{formatDateTime(DEMO_COMPANY.created_at)}</p>
+            <p className="text-sm font-medium text-gray-900">{formatDateTime(COMPANY_META.created_at)}</p>
           </div>
         </div>
       </Card>
@@ -156,7 +163,7 @@ export function AdminPage() {
           </div>
         </div>
         <div className="space-y-2">
-          {DEMO_PROFILES.map(p => (
+          {employees.map(p => (
             <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold">

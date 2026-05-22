@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { PageHeader, Card, Badge } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
-import { DEMO_POSTS, DEMO_POST_STATUS } from '@/lib/mockData';
+import { usePosts } from '@/hooks';
 import { cn } from '@/lib/utils';
 import { MapPin, Navigation, Clock, Users, Siren } from 'lucide-react';
 import type { OperationalStatus } from '@/lib/types';
@@ -21,8 +21,25 @@ const STATUS_COLORS: Record<OperationalStatus, string> = {
 
 export function MapPage() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
-  const posts = DEMO_POSTS;
-  const statuses = DEMO_POST_STATUS;
+  const { posts, statuses, loading } = usePosts();
+
+  if (loading) {
+    return (
+      <div>
+        <PageHeader title="Mapa Operacional" subtitle="Carregando postos..." />
+        <Card><p className="text-sm text-gray-500 text-center py-12">Carregando mapa operacional...</p></Card>
+      </div>
+    );
+  }
+
+  if (posts.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Mapa Operacional" subtitle="Nenhum posto ativo" />
+        <Card><p className="text-sm text-gray-500 text-center py-12">Nenhum posto cadastrado para exibir no mapa.</p></Card>
+      </div>
+    );
+  }
 
   // Min/max lat/lng for bounding box
   const lats = posts.map(p => p.lat);

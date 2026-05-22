@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { PageHeader, Card, Badge, Button } from '@/components/ui';
-import { DEMO_NOTIFICATIONS } from '@/lib/mockData';
+import { useNotifications } from '@/hooks';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import {
   Bell, BellOff, Check, CheckCheck, AlertTriangle, Siren,
@@ -34,22 +34,12 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 export function NotificationsPage() {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [filterUnread, setFilterUnread] = useState(false);
+  const { notifications, unreadCount, loading, markAsRead, markAllRead } = useNotifications(
+    filterUnread ? { is_read: false } : undefined
+  );
 
-  const filtered = filterUnread
-    ? notifications.filter(n => !n.is_read)
-    : notifications;
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-  };
-
-  const markAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-  };
+  const filtered = notifications;
 
   return (
     <div>
@@ -67,7 +57,7 @@ export function NotificationsPage() {
               {filterUnread ? 'Todas' : 'Não lidas'}
             </Button>
             {unreadCount > 0 && (
-              <Button variant="secondary" size="sm" onClick={markAllRead}>
+              <Button variant="secondary" size="sm" onClick={() => void markAllRead()}>
                 <CheckCheck className="w-4 h-4 mr-1" /> Marcar todas como lidas
               </Button>
             )}
@@ -75,7 +65,14 @@ export function NotificationsPage() {
         }
       />
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Card>
+          <div className="text-center py-12">
+            <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3 animate-pulse" />
+            <p className="text-sm text-gray-500">Carregando notificações...</p>
+          </div>
+        </Card>
+      ) : filtered.length === 0 ? (
         <Card>
           <div className="text-center py-12">
             <BellOff className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -94,7 +91,7 @@ export function NotificationsPage() {
                 SEVERITY_STYLES[notification.severity],
                 !notification.is_read && 'ring-1 ring-blue-200'
               )}
-              onClick={() => markAsRead(notification.id)}
+              onClick={() => void markAsRead(notification.id)}
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-0.5">
@@ -135,7 +132,7 @@ export function NotificationsPage() {
                     </button>
                   )}
                   <button
-                    onClick={(e) => { e.stopPropagation(); markAsRead(notification.id); }}
+                    onClick={(e) => { e.stopPropagation(); void markAsRead(notification.id); }}
                     className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-green-600 transition-colors"
                     title="Marcar como lida"
                   >

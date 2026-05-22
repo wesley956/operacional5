@@ -9,8 +9,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { Profile, Role } from '@/lib/types';
 import { getDataProvider } from '@/lib/data/data-provider';
-
-export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
+import { DEMO_MODE, assertSafeRuntimeConfig } from '@/lib/env';
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -28,6 +27,7 @@ export interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  assertSafeRuntimeConfig();
   const [state, setState] = useState<AuthState>({
     isAuthenticated: false,
     profile: null,

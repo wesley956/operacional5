@@ -16,6 +16,7 @@ import type {
 } from '../types';
 import { createDemoAdapter } from './adapters/demo-adapter';
 import { createSupabaseAdapter } from './adapters/supabase-adapter';
+import { DEMO_MODE, SUPABASE_ANON_KEY, SUPABASE_URL, assertSafeRuntimeConfig } from '../env';
 
 // --- Repository Interfaces ---
 
@@ -374,12 +375,10 @@ export function setDataProvider(provider: IDataProvider): void {
 export function getDataProvider(): IDataProvider {
   if (_provider) return _provider;
 
-  const demoMode = import.meta.env.VITE_DEMO_MODE !== 'false';
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  assertSafeRuntimeConfig();
 
-  if (!demoMode && supabaseUrl && supabaseAnonKey) {
-    _provider = createSupabaseAdapter(supabaseUrl, supabaseAnonKey);
+  if (!DEMO_MODE) {
+    _provider = createSupabaseAdapter(SUPABASE_URL, SUPABASE_ANON_KEY);
     return _provider;
   }
 

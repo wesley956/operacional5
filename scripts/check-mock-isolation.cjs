@@ -4,6 +4,7 @@ const allowed = [
   'src/lib/mockData.ts',
   'src/lib/data/adapters/demo-adapter.ts',
   'src/lib/data/data-provider.ts',
+  'src/lib/env.ts',
   'src/context/AuthContext.tsx',
   'src/vite-env.d.ts',
 ];

@@ -5,6 +5,17 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  handleEdgeError,
+  jsonResponse,
+  optionalString,
+  readJsonObject,
+  requiredEnum,
+  requiredObject,
+  requiredString,
+} from '../_shared/validation.ts';
+
+const OFFLINE_EVENT_TYPES = ['presence', 'occurrence', 'sos', 'ronda', 'handover'] as const;
 
 serve(async (req) => {
   const supabase = createClient(
@@ -13,17 +24,14 @@ serve(async (req) => {
   );
 
   try {
-    const { type, idempotency_key, payload, photo_url } = await req.json();
+    const body = await readJsonObject(req);
 
-    if (!type || !idempotency_key) {
-      return new Response(JSON.stringify({ error: 'Missing type or idempotency_key' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const type = requiredEnum(body, 'type', OFFLINE_EVENT_TYPES);
+    const idempotencyKey = requiredString(body, 'idempotency_key');
+    const payload = requiredObject(body, 'payload');
+    const photoUrl = optionalString(body, 'photo_url');
 
-    // 1. Verificar idempotência — se já existe, retornar sucesso sem duplicar
-    const tables: Record<string, string> = {
+    const tables: Record<typeof type, string> = {
       presence: 'presences',
       occurrence: 'occurrences',
       sos: 'occurrences',
@@ -32,38 +40,28 @@ serve(async (req) => {
     };
 
     const table = tables[type];
-    if (!table) {
-      return new Response(JSON.stringify({ error: `Unknown event type: ${type}` }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
 
     const { data: existing } = await supabase
       .from(table)
       .select('id')
-      .eq('idempotency_key', idempotency_key)
+      .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
 
     if (existing) {
-      return new Response(JSON.stringify({
+      return jsonResponse({
         success: true,
         message: 'Event already synced (idempotent)',
         id: existing.id,
-      }), {
-        headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // 2. Inserir novo evento
-    const insertPayload = {
+    const insertPayload: Record<string, unknown> = {
       ...payload,
-      idempotency_key,
-      photo_url: photo_url || payload.photo_url,
+      idempotency_key: idempotencyKey,
+      photo_url: photoUrl || payload.photo_url,
       synced_at: new Date().toISOString(),
     };
 
-    // Remover campos que podem causar conflito
     delete insertPayload.offline_created_at;
 
     const { data, error } = await supabase
@@ -73,29 +71,27 @@ serve(async (req) => {
       .single();
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ success: false, error: error.message }, 500);
     }
 
-    // 3. Ações pós-inserção baseadas no tipo
     if (type === 'sos') {
-      // Disparar alertas para supervisor e gerente
+      const postId = requiredString(payload, 'post_id');
+      const companyId = requiredString(payload, 'company_id');
+
       const { data: supervisors } = await supabase
         .from('supervisor_posts')
         .select('supervisor_id')
-        .eq('post_id', payload.post_id);
+        .eq('post_id', postId);
 
       if (supervisors) {
         for (const sp of supervisors) {
           await supabase.from('alert_log').insert({
-            company_id: payload.company_id,
+            company_id: companyId,
             type: 'sos',
             target_user_id: sp.supervisor_id,
-            post_id: payload.post_id,
+            post_id: postId,
             occurrence_id: data.id,
-            payload: { message: `SOS disparado (sync offline)` },
+            payload: { message: 'SOS disparado (sync offline)' },
             channel: 'system',
             status: 'sent',
           });
@@ -103,26 +99,20 @@ serve(async (req) => {
       }
     }
 
-    // 4. Audit
     await supabase.from('audit_logs').insert({
-      company_id: payload.company_id,
+      company_id: requiredString(payload, 'company_id'),
       action: `offline_sync_${type}`,
       entity: table,
       entity_id: data.id,
-      metadata: { idempotency_key, offline: true },
+      metadata: { idempotency_key: idempotencyKey, offline: true },
     });
 
-    return new Response(JSON.stringify({
+    return jsonResponse({
       success: true,
       id: data.id,
       type,
-    }), {
-      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return handleEdgeError(error);
   }
 });

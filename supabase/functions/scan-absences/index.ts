@@ -6,6 +6,13 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  handleEdgeError,
+  jsonResponse,
+  optionalBoolean,
+  optionalString,
+  readJsonObject,
+} from '../_shared/validation.ts';
 
 serve(async (req) => {
   const supabase = createClient(
@@ -14,18 +21,25 @@ serve(async (req) => {
   );
 
   try {
-    // 1. Buscar postos ativos com turno em andamento
-    const { data: activeShifts } = await supabase
+    const body = await readJsonObject(req);
+    const companyId = optionalString(body, 'company_id');
+    const dryRun = optionalBoolean(body, 'dry_run') ?? false;
+
+    let query = supabase
       .from('schedules')
-      .select('id, post_id, employee_id, shift_start, shift_end, posts(*)')
+      .select('id, company_id, post_id, employee_id, shift_start, shift_end, posts(*)')
       .eq('is_active', true)
       .lt('shift_start', new Date().toISOString())
       .gt('shift_end', new Date().toISOString());
 
+    if (companyId) {
+      query = query.eq('company_id', companyId);
+    }
+
+    const { data: activeShifts } = await query;
+
     if (!activeShifts || activeShifts.length === 0) {
-      return new Response(JSON.stringify({ message: 'No active shifts found' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ success: true, message: 'No active shifts found', scanned: 0, actions: [] });
     }
 
     const results: Record<string, unknown>[] = [];
@@ -34,16 +48,12 @@ serve(async (req) => {
       const post = shift.posts;
       if (!post || !post.active) continue;
 
-      // 2. Calcular tolerância
       const toleranceMs = (post.tolerance_minutes || 15) * 60 * 1000;
       const shiftStart = new Date(shift.shift_start);
       const now = new Date();
 
-      if (now.getTime() - shiftStart.getTime() < toleranceMs) {
-        continue; // Ainda dentro da tolerância
-      }
+      if (now.getTime() - shiftStart.getTime() < toleranceMs) continue;
 
-      // 3. Verificar presença confirmada
       const { data: presences } = await supabase
         .from('presences')
         .select('id')
@@ -52,11 +62,8 @@ serve(async (req) => {
         .gte('confirmed_at', shift.shift_start)
         .in('status', ['valid', 'pending_review']);
 
-      if (presences && presences.length > 0) {
-        continue; // Presença confirmada
-      }
+      if (presences && presences.length > 0) continue;
 
-      // 4. Verificar se já existe alerta recente
       const { data: existingAlerts } = await supabase
         .from('alert_log')
         .select('id')
@@ -64,11 +71,8 @@ serve(async (req) => {
         .eq('type', 'ausencia')
         .gt('created_at', new Date(now.getTime() - 30 * 60 * 1000).toISOString());
 
-      if (existingAlerts && existingAlerts.length > 0) {
-        continue; // Alerta já existe
-      }
+      if (existingAlerts && existingAlerts.length > 0) continue;
 
-      // 5. Buscar supervisor do posto
       const { data: supervisorPost } = await supabase
         .from('supervisor_posts')
         .select('supervisor_id')
@@ -78,8 +82,7 @@ serve(async (req) => {
 
       const targetUserId = supervisorPost?.supervisor_id;
 
-      // 6. Criar alerta de ausência
-      if (targetUserId) {
+      if (!dryRun && targetUserId) {
         await supabase.from('alert_log').insert({
           company_id: post.company_id,
           type: 'ausencia',
@@ -95,7 +98,6 @@ serve(async (req) => {
         });
       }
 
-      // 7. Abrir FT automática
       const { data: existingFT } = await supabase
         .from('ft_requests')
         .select('id')
@@ -103,7 +105,7 @@ serve(async (req) => {
         .in('status', ['aberta', 'acionando'])
         .gt('opened_at', new Date(now.getTime() - 60 * 60 * 1000).toISOString());
 
-      if (!existingFT || existingFT.length === 0) {
+      if (!dryRun && (!existingFT || existingFT.length === 0)) {
         await supabase.from('ft_requests').insert({
           company_id: post.company_id,
           post_id: shift.post_id,
@@ -116,33 +118,30 @@ serve(async (req) => {
         });
       }
 
-      // 8. Audit log
-      await supabase.from('audit_logs').insert({
-        company_id: post.company_id,
-        action: 'auto_ft_opened',
-        entity: 'ft_request',
-        entity_id: shift.post_id,
-        metadata: { employee_id: shift.employee_id, automated: true },
-      });
+      if (!dryRun) {
+        await supabase.from('audit_logs').insert({
+          company_id: post.company_id,
+          action: 'auto_ft_opened',
+          entity: 'ft_request',
+          entity_id: shift.post_id,
+          metadata: { employee_id: shift.employee_id, automated: true },
+        });
+      }
 
       results.push({
         post_id: shift.post_id,
         employee_id: shift.employee_id,
-        action: 'ft_auto_opened',
+        action: dryRun ? 'would_open_ft' : 'ft_auto_opened',
       });
     }
 
-    return new Response(JSON.stringify({
+    return jsonResponse({
       success: true,
+      dry_run: dryRun,
       scanned: activeShifts.length,
       actions: results,
-    }), {
-      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return handleEdgeError(error);
   }
 });

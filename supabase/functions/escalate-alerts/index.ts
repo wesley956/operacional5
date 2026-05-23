@@ -6,18 +6,28 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  handleEdgeError,
+  jsonResponse,
+  optionalBoolean,
+  optionalString,
+  readJsonObject,
+} from '../_shared/validation.ts';
 
-serve(async (_req) => {
+serve(async (req) => {
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
 
   try {
-    // Buscar alertas críticos sem ciência há mais de 10 minutos
+    const body = await readJsonObject(req);
+    const companyIdFilter = optionalString(body, 'company_id');
+    const dryRun = optionalBoolean(body, 'dry_run') ?? false;
+
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-    const { data: unacknowledged } = await supabase
+    let query = supabase
       .from('alert_log')
       .select('*, profiles:target_user_id(role, company_id)')
       .in('type', ['sos', 'ocorrencia_critica', 'ausencia'])
@@ -25,10 +35,14 @@ serve(async (_req) => {
       .eq('escalated', false)
       .lt('created_at', tenMinutesAgo);
 
+    if (companyIdFilter) {
+      query = query.eq('company_id', companyIdFilter);
+    }
+
+    const { data: unacknowledged } = await query;
+
     if (!unacknowledged || unacknowledged.length === 0) {
-      return new Response(JSON.stringify({ message: 'No alerts to escalate' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ success: true, message: 'No alerts to escalate', escalated: 0, details: [] });
     }
 
     const escalations: Record<string, unknown>[] = [];
@@ -37,7 +51,6 @@ serve(async (_req) => {
       const role = alert.profiles?.role;
       const companyId = alert.profiles?.company_id;
 
-      // Determinar próximo nível
       let nextRole = '';
       if (role === 'supervisor') nextRole = 'gerente';
       else if (role === 'gerente') nextRole = 'diretor';
@@ -54,49 +67,46 @@ serve(async (_req) => {
 
       if (!nextTarget) continue;
 
-      // Marcar original como escalado
-      await supabase
-        .from('alert_log')
-        .update({ escalated: true })
-        .eq('id', alert.id);
+      if (!dryRun) {
+        await supabase
+          .from('alert_log')
+          .update({ escalated: true })
+          .eq('id', alert.id);
 
-      // Criar novo alerta escalado
-      await supabase.from('alert_log').insert({
-        company_id: alert.company_id,
-        type: alert.type,
-        target_user_id: nextTarget.id,
-        post_id: alert.post_id,
-        occurrence_id: alert.occurrence_id,
-        ft_request_id: alert.ft_request_id,
-        payload: {
-          ...alert.payload,
-          original_alert_id: alert.id,
-          escalated: true,
-        },
-        channel: 'system',
-        status: 'sent',
-        escalated: false,
-      });
+        await supabase.from('alert_log').insert({
+          company_id: alert.company_id,
+          type: alert.type,
+          target_user_id: nextTarget.id,
+          post_id: alert.post_id,
+          occurrence_id: alert.occurrence_id,
+          ft_request_id: alert.ft_request_id,
+          payload: {
+            ...alert.payload,
+            original_alert_id: alert.id,
+            escalated: true,
+          },
+          channel: 'system',
+          status: 'sent',
+          escalated: false,
+        });
+      }
 
       escalations.push({
         alert_id: alert.id,
         from_role: role,
         to_role: nextRole,
         to_user_id: nextTarget.id,
+        action: dryRun ? 'would_escalate' : 'escalated',
       });
     }
 
-    return new Response(JSON.stringify({
+    return jsonResponse({
       success: true,
+      dry_run: dryRun,
       escalated: escalations.length,
       details: escalations,
-    }), {
-      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return handleEdgeError(error);
   }
 });

@@ -1,35 +1,37 @@
 // OPERACIONAL5 — Edge Function: send-alert
-// Stub preparado para produção Supabase.
+// Stub preparado para produção Supabase com validação de payload.
 
-type AlertPayload = {
-  alert_id?: string;
-  company_id?: string;
-  channel?: "system" | "push" | "sms" | "email";
-  title?: string;
-  message?: string;
-};
+import {
+  handleEdgeError,
+  jsonResponse,
+  optionalEnum,
+  optionalString,
+  readJsonObject,
+  requiredString,
+} from '../_shared/validation.ts';
+
+const CHANNELS = ['system', 'push', 'sms', 'email'] as const;
 
 Deno.serve(async (req) => {
   try {
-    const payload = (await req.json().catch(() => ({}))) as AlertPayload;
+    const body = await readJsonObject(req);
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        function: "send-alert",
-        mode: "stub",
-        received: payload,
-        note: "Configurar FCM/SMS/E-mail na etapa final.",
-      }),
-      { headers: { "content-type": "application/json" } },
-    );
+    const payload = {
+      alert_id: optionalString(body, 'alert_id'),
+      company_id: requiredString(body, 'company_id'),
+      channel: optionalEnum(body, 'channel', CHANNELS) ?? 'system',
+      title: requiredString(body, 'title'),
+      message: requiredString(body, 'message'),
+    };
+
+    return jsonResponse({
+      ok: true,
+      function: 'send-alert',
+      mode: 'stub',
+      received: payload,
+      note: 'Configurar FCM/SMS/E-mail na etapa final.',
+    });
   } catch (error) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      }),
-      { status: 500, headers: { "content-type": "application/json" } },
-    );
+    return handleEdgeError(error);
   }
 });

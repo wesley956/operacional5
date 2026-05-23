@@ -33,6 +33,7 @@ import type {
   AuditEntryData,
   ScheduleConflictData,
 } from '../data-provider';
+import { checkGeofence, haversineDistance } from '../../geo';
 import type {
   DashboardSummary,
   FTRequest,
@@ -296,8 +297,172 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
     },
 
     presence: {
-      confirm(_input: ConfirmPresenceInput): Promise<PresenceResult> {
-        return failNotImplemented('presence.confirm será implementado na etapa 4/10');
+      async confirm(input: ConfirmPresenceInput): Promise<PresenceResult> {
+        const inputMeta = input as ConfirmPresenceInput & {
+          speed?: number;
+          altitude?: number;
+          offline_created_at?: string;
+        };
+
+        const { data: existing, error: existingError } = await supabase
+          .from('presences')
+          .select('*')
+          .eq('idempotency_key', input.idempotency_key)
+          .maybeSingle();
+
+        assertNoError(existingError, 'Erro ao verificar idempotência da presença');
+
+        if (existing) {
+          return {
+            success: true,
+            presence: asPresence(existing as DbRow),
+            message: 'Presença já registrada',
+            status: 'approved',
+          };
+        }
+
+        const { data: postRow, error: postError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', input.post_id)
+          .single();
+
+        assertNoError(postError, 'Erro ao buscar posto para presença');
+
+        if (!postRow) {
+          return {
+            success: false,
+            presence: null,
+            message: 'Posto não encontrado',
+            status: 'rejected',
+          };
+        }
+
+        const post = asPost(postRow as DbRow);
+        let distance = 0;
+        let gpsValid = false;
+        let status: PresenceResult['status'] = 'approved';
+        let mockReasons: string[] = [];
+
+        if (input.method === 'gps') {
+          if (typeof input.lat !== 'number' || typeof input.lng !== 'number') {
+            return {
+              success: false,
+              presence: null,
+              message: 'Latitude e longitude são obrigatórias para presença via GPS.',
+              status: 'rejected',
+            };
+          }
+
+          distance = haversineDistance(input.lat, input.lng, post.lat, post.lng);
+          const check = checkGeofence(
+            input.lat,
+            input.lng,
+            post.lat,
+            post.lng,
+            post.radius_meters,
+            input.accuracy,
+            inputMeta.speed,
+            inputMeta.altitude,
+          );
+
+          gpsValid = check.within_fence;
+          mockReasons = check.mock_reasons;
+
+          if (check.mock_detected || input.is_mock_location) {
+            return {
+              success: false,
+              presence: null,
+              message: `GPS falso detectado: ${mockReasons.join(', ') || 'sinal suspeito'}`,
+              status: 'rejected',
+              distance_meters: distance,
+            };
+          }
+
+          if (!check.within_fence) {
+            return {
+              success: false,
+              presence: null,
+              message: `Fora do raio do posto. Distância: ${Math.round(distance)}m (raio: ${post.radius_meters}m)`,
+              status: 'rejected',
+              distance_meters: distance,
+            };
+          }
+
+          if (!check.accuracy_ok) {
+            status = 'pending_review';
+          }
+        }
+
+        if (input.method === 'qr') {
+          if (!input.qr_code_token || input.qr_code_token !== post.qr_code_token) {
+            return {
+              success: false,
+              presence: null,
+              message: 'QR Code inválido para este posto',
+              status: 'rejected',
+            };
+          }
+
+          gpsValid = true;
+        }
+
+        if (input.method === 'nfc') {
+          if (!input.nfc_uid || input.nfc_uid !== post.nfc_uid) {
+            return {
+              success: false,
+              presence: null,
+              message: 'NFC inválido para este posto',
+              status: 'rejected',
+            };
+          }
+
+          gpsValid = true;
+        }
+
+        const dbStatus =
+          status === 'approved'
+            ? 'valid'
+            : status === 'pending_review'
+              ? 'pending_review'
+              : 'rejected';
+
+        const insertPayload = {
+          schedule_id: input.schedule_id,
+          employee_id: input.employee_id,
+          post_id: input.post_id,
+          gps_lat: input.lat,
+          gps_lng: input.lng,
+          gps_valid: gpsValid,
+          accuracy: input.accuracy,
+          validation_method: input.method,
+          photo_url: input.photo_url,
+          is_mock_location: input.is_mock_location ?? false,
+          mock_reasons: mockReasons,
+          status: dbStatus,
+          idempotency_key: input.idempotency_key,
+          device_info: input.device_info,
+          offline_created_at: inputMeta.offline_created_at,
+          synced_at: new Date().toISOString(),
+        };
+
+        const { data, error } = await supabase
+          .from('presences')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao confirmar presença');
+
+        const presence = asPresence(data as DbRow);
+
+        return {
+          success: true,
+          presence,
+          message: status === 'approved' ? 'Presença confirmada!' : 'Presença registrada para revisão',
+          status,
+          distance_meters: distance,
+        };
       },
 
       async list(filters?: PresenceFilters): Promise<Presence[]> {

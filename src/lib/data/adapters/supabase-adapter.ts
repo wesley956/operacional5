@@ -16,6 +16,8 @@ import type {
   OccurrenceFilters,
   FTFilters,
   RondaFilters,
+  HandoverFilters,
+  AuditFilters,
   NotificationFilters,
   ScheduleFilters,
   ConfirmPresenceInput,
@@ -86,6 +88,29 @@ function asRondaPoint(row: DbRow): RondaPointData {
 
 function asRondaLog(row: DbRow): RondaLogData {
   return row as unknown as RondaLogData;
+}
+
+function asHandover(row: DbRow): HandoverData {
+  return {
+    ...(row as unknown as HandoverData),
+    pending_items: Array.isArray(row.pending_items) ? row.pending_items as string[] : [],
+  };
+}
+
+function asAuditEntry(row: DbRow): AuditEntryData {
+  const profile = row.profiles as { name?: string } | undefined;
+
+  return {
+    id: String(row.id),
+    company_id: String(row.company_id),
+    actor_id: String(row.actor_id ?? ''),
+    actor_name: profile?.name ?? 'Sistema',
+    action: String(row.action),
+    entity: String(row.entity),
+    entity_id: String(row.entity_id),
+    metadata: (row.metadata as Record<string, unknown> | undefined) ?? undefined,
+    created_at: String(row.created_at ?? new Date().toISOString()),
+  };
 }
 
 function normalizeProfile(row: DbRow): Profile {
@@ -1014,20 +1039,87 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
     },
 
     handover: {
-      list(): Promise<HandoverData[]> {
-        return failNotImplemented('handover.list será implementado em etapa posterior');
+      async list(filters?: HandoverFilters): Promise<HandoverData[]> {
+        let query = supabase
+          .from('shift_handovers')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (filters?.post_id) query = query.eq('post_id', filters.post_id);
+        if (filters?.status) query = query.eq('status', filters.status);
+
+        const filtersMeta = filters as HandoverFilters & {
+          employee_id?: string;
+        };
+
+        if (filtersMeta?.employee_id) {
+          query = query.or(
+            `outgoing_employee_id.eq.${filtersMeta.employee_id},incoming_employee_id.eq.${filtersMeta.employee_id}`
+          );
+        }
+
+        const { data, error } = await query;
+        assertNoError(error, 'Erro ao listar passagens de plantão');
+        return ((data ?? []) as DbRow[]).map(asHandover);
       },
-      getById(_id: string): Promise<HandoverData | null> {
-        return failNotImplemented('handover.getById será implementado em etapa posterior');
+
+      async getById(id: string): Promise<HandoverData | null> {
+        const { data, error } = await supabase
+          .from('shift_handovers')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        assertNoError(error, 'Erro ao buscar passagem de plantão');
+        return data ? asHandover(data as DbRow) : null;
       },
-      create(_input: CreateHandoverInput): Promise<HandoverData> {
-        return failNotImplemented('handover.create será implementado em etapa posterior');
+
+      async create(input: CreateHandoverInput): Promise<HandoverData> {
+        const { data, error } = await supabase
+          .from('shift_handovers')
+          .insert({
+            post_id: input.post_id,
+            outgoing_employee_id: input.outgoing_employee_id,
+            incoming_employee_id: input.incoming_employee_id,
+            status: 'pendente',
+            notes: input.notes,
+            pending_items: input.pending_items ?? [],
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar passagem de plantão');
+        return asHandover(data as DbRow);
       },
-      confirm(_id: string): Promise<HandoverData> {
-        return failNotImplemented('handover.confirm será implementado em etapa posterior');
+
+      async confirm(id: string): Promise<HandoverData> {
+        const { data, error } = await supabase
+          .from('shift_handovers')
+          .update({
+            status: 'confirmada',
+            confirmed_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao confirmar passagem de plantão');
+        return asHandover(data as DbRow);
       },
-      reportRetention(_id: string, _reason: string): Promise<HandoverData> {
-        return failNotImplemented('handover.reportRetention será implementado em etapa posterior');
+
+      async reportRetention(id: string, reason: string): Promise<HandoverData> {
+        const { data, error } = await supabase
+          .from('shift_handovers')
+          .update({
+            status: 'retido',
+            retention_reason: reason,
+          })
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao registrar retenção na passagem de plantão');
+        return asHandover(data as DbRow);
       },
     },
 
@@ -1178,11 +1270,42 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
     },
 
     audit: {
-      write(_entry: AuditEntryInput): Promise<void> {
-        return failNotImplemented('audit.write será implementado em etapa posterior');
+      async write(entry: AuditEntryInput): Promise<void> {
+        const { error } = await supabase.from('audit_logs').insert({
+          company_id: entry.company_id,
+          actor_id: entry.actor_id,
+          action: entry.action,
+          entity: entry.entity,
+          entity_id: entry.entity_id,
+          metadata: entry.metadata ?? {},
+        });
+
+        assertNoError(error, 'Erro ao gravar auditoria');
       },
-      list(): Promise<AuditEntryData[]> {
-        return failNotImplemented('audit.list será implementado em etapa posterior');
+
+      async list(filters?: AuditFilters): Promise<AuditEntryData[]> {
+        const filtersMeta = filters as AuditFilters & {
+          company_id?: string;
+          actor_id?: string;
+          date_from?: string;
+          date_to?: string;
+        };
+
+        let query = supabase
+          .from('audit_logs')
+          .select('*, profiles:actor_id(name)')
+          .order('created_at', { ascending: false });
+
+        if (filtersMeta?.company_id) query = query.eq('company_id', filtersMeta.company_id);
+        if (filtersMeta?.actor_id) query = query.eq('actor_id', filtersMeta.actor_id);
+        if (filters?.entity) query = query.eq('entity', filters.entity);
+        if (filters?.action) query = query.eq('action', filters.action);
+        if (filtersMeta?.date_from) query = query.gte('created_at', filtersMeta.date_from);
+        if (filtersMeta?.date_to) query = query.lte('created_at', filtersMeta.date_to);
+
+        const { data, error } = await query;
+        assertNoError(error, 'Erro ao listar auditoria');
+        return ((data ?? []) as DbRow[]).map(asAuditEntry);
       },
     },
 

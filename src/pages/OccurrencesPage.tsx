@@ -2,15 +2,15 @@
 // OPERACIONAL5 — Página de Ocorrências
 // ============================================================
 
-import { useState } from 'react';
-import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField, Textarea } from '@/components/ui';
+import { useState, type FormEvent } from 'react';
+import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { SeverityBadge } from '@/components/DashboardComponents';
 import { useEmployees, useOccurrences, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
 import {
   OCCURRENCE_TYPE_LABELS, SEVERITY_LABELS,
-  type Occurrence, type OccurrenceType, type OccurrenceStatus,
+  type Occurrence, type OccurrenceType, type OccurrenceStatus, type Severity,
 } from '@/lib/types';
 import {
   FileWarning, Plus, AlertTriangle, Siren, Eye, CheckCircle,
@@ -28,6 +28,15 @@ const OCCURRENCE_ICONS: Record<OccurrenceType, React.ReactNode> = {
   sos: <Siren className="w-4 h-4 text-red-600" />,
 };
 
+
+function makeIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `occurrence-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 const STATUS_BADGES: Record<OccurrenceStatus, 'danger' | 'warning' | 'success' | 'default'> = {
   aberta: 'danger',
   em_tratamento: 'warning',
@@ -38,10 +47,13 @@ const STATUS_BADGES: Record<OccurrenceStatus, 'danger' | 'warning' | 'success' |
 export function OccurrencesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const { occurrences, loading } = useOccurrences();
+  const { occurrences, loading, createOccurrence } = useOccurrences();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
@@ -54,6 +66,59 @@ export function OccurrencesPage() {
   });
 
   const selected = selectedId ? occurrences.find(o => o.id === selectedId) : null;
+
+  const handleCreateOccurrence = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setCreateError(null);
+    setCreateSuccess(null);
+    setCreating(true);
+
+    try {
+      const form = new FormData(formElement);
+
+      const employeeId = String(form.get('employee_id') ?? '').trim();
+      const postId = String(form.get('post_id') ?? '').trim();
+      const type = String(form.get('type') ?? '').trim() as OccurrenceType;
+      const severity = String(form.get('severity') ?? '').trim() as Severity;
+      const description = String(form.get('description') ?? '').trim();
+      const photoUrl = String(form.get('photo_url') ?? '').trim();
+      const latValue = String(form.get('lat') ?? '').trim();
+      const lngValue = String(form.get('lng') ?? '').trim();
+
+      if (!employeeId) throw new Error('Selecione o funcionário responsável.');
+      if (!postId) throw new Error('Selecione o posto.');
+      if (!type) throw new Error('Selecione o tipo da ocorrência.');
+      if (!severity) throw new Error('Selecione a severidade.');
+      if (!description) throw new Error('Descreva a ocorrência.');
+
+      const lat = latValue ? Number(latValue) : undefined;
+      const lng = lngValue ? Number(lngValue) : undefined;
+
+      if (latValue && !Number.isFinite(lat)) throw new Error('Latitude inválida.');
+      if (lngValue && !Number.isFinite(lng)) throw new Error('Longitude inválida.');
+
+      const occurrence = await createOccurrence({
+        employee_id: employeeId,
+        post_id: postId,
+        type,
+        severity,
+        description,
+        photo_url: photoUrl || undefined,
+        lat,
+        lng,
+        idempotency_key: makeIdempotencyKey(),
+      });
+
+      formElement.reset();
+      setShowNewModal(false);
+      setCreateSuccess(`Ocorrência ${OCCURRENCE_TYPE_LABELS[occurrence.type]} registrada com sucesso.`);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Erro ao registrar ocorrência.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const columns = [
     {
@@ -110,7 +175,7 @@ export function OccurrencesPage() {
         title="Ocorrências"
         subtitle={loading ? 'Carregando ocorrências...' : `${occurrences.length} ocorrências registradas`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SelectField
               id="sev-filter"
               placeholder="Severidade"
@@ -132,12 +197,22 @@ export function OccurrencesPage() {
               onChange={e => setStatusFilter(e.target.value)}
               className="w-36"
             />
-            <Button onClick={() => setShowNewModal(true)}>
+            <Button onClick={() => {
+              setCreateError(null);
+              setCreateSuccess(null);
+              setShowNewModal(true);
+            }}>
               <Plus className="w-4 h-4 mr-1" /> Nova
             </Button>
           </div>
         }
       />
+
+      {createSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {createSuccess}
+        </div>
+      )}
 
       <Card padding={false}>
         <DataTable
@@ -241,44 +316,83 @@ export function OccurrencesPage() {
 
       {/* New Occurrence Modal */}
       <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title="Nova Ocorrência">
-        <div className="space-y-4">
+        <form onSubmit={handleCreateOccurrence} className="space-y-4">
+          {createError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+
+          <SelectField
+            id="occ-employee"
+            name="employee_id"
+            label="Funcionário responsável"
+            placeholder="Selecione..."
+            required
+            options={employees.map(employee => ({
+              value: employee.id,
+              label: `${employee.name} — ${employee.role}`,
+            }))}
+          />
+
+          <SelectField
+            id="occ-post"
+            name="post_id"
+            label="Posto"
+            placeholder="Selecione..."
+            required
+            options={posts.map(post => ({ value: post.id, label: post.name }))}
+          />
+
           <SelectField
             id="occ-type"
+            name="type"
             label="Tipo"
             placeholder="Selecione o tipo..."
+            required
             options={Object.entries(OCCURRENCE_TYPE_LABELS)
               .filter(([k]) => k !== 'sos')
               .map(([value, label]) => ({ value, label }))}
           />
+
           <SelectField
             id="occ-severity"
+            name="severity"
             label="Severidade"
             placeholder="Selecione..."
+            required
             options={Object.entries(SEVERITY_LABELS).map(([value, label]) => ({ value, label }))}
           />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Foto <span className="text-red-500">*</span>
-            </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer">
-              <Camera className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Clique para tirar foto ou anexar</p>
-              <p className="text-xs text-gray-400 mt-1">Obrigatória para envio oficial</p>
-            </div>
-          </div>
+
           <Textarea
             id="occ-desc"
-            label="Descrição (opcional)"
+            name="description"
+            label="Descrição"
             placeholder="Descreva o que aconteceu..."
+            required
           />
-          <div className="flex gap-2 pt-2">
-            <Button className="flex-1">Registrar Ocorrência</Button>
-            <Button variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
+
+          <Input
+            id="occ-photo-url"
+            name="photo_url"
+            label="URL da evidência/foto (opcional)"
+            placeholder="Caminho do arquivo no bucket evidence"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input id="occ-lat" name="lat" label="Latitude (opcional)" type="number" step="any" placeholder="-23.5505" />
+            <Input id="occ-lng" name="lng" label="Longitude (opcional)" type="number" step="any" placeholder="-46.6333" />
           </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" className="flex-1" loading={creating}>Registrar Ocorrência</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
+          </div>
+
           <p className="text-xs text-gray-400 text-center">
-            ⚠️ Modo demo — dados não persistidos. Em produção, foto é obrigatória.
+            A ocorrência será salva no Supabase real e ficará disponível para supervisão.
           </p>
-        </div>
+        </form>
       </Modal>
     </div>
   );

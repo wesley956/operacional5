@@ -2,8 +2,8 @@
 // OPERACIONAL5 — Página de Presença
 // ============================================================
 
-import { useState } from 'react';
-import { PageHeader, Card, Badge, DataTable, Modal, SelectField } from '@/components/ui';
+import { useState, type FormEvent } from 'react';
+import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees, usePosts, usePresence } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
@@ -17,6 +17,30 @@ const METHOD_ICONS: Record<PresenceMethod, React.ReactNode> = {
   manual: <MapPin className="w-4 h-4 text-gray-600" />,
 };
 
+
+function makeIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `presence-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocalização não disponível neste navegador.'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
+  });
+}
+
 const STATUS_CONFIG: Record<PresenceStatus, { badge: 'success' | 'warning' | 'danger'; icon: React.ReactNode; label: string }> = {
   valid: { badge: 'success', icon: <CheckCircle className="w-3.5 h-3.5" />, label: 'Válida' },
   pending_review: { badge: 'warning', icon: <Clock className="w-3.5 h-3.5" />, label: 'Revisão' },
@@ -25,10 +49,15 @@ const STATUS_CONFIG: Record<PresenceStatus, { badge: 'success' | 'warning' | 'da
 
 export function PresencePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
+  const [presenceMethod, setPresenceMethod] = useState<PresenceMethod>('manual');
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const { presences, loading } = usePresence();
+  const { presences, loading, confirmPresence } = usePresence();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
@@ -41,6 +70,73 @@ export function PresencePage() {
   });
 
   const selected = selectedId ? presences.find(p => p.id === selectedId) : null;
+
+  const handleConfirmPresence = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setConfirmError(null);
+    setConfirmSuccess(null);
+    setConfirming(true);
+
+    try {
+      const form = new FormData(formElement);
+      const employeeId = String(form.get('employee_id') ?? '').trim();
+      const postId = String(form.get('post_id') ?? '').trim();
+      const method = String(form.get('method') ?? 'manual') as PresenceMethod;
+      const qrCodeToken = String(form.get('qr_code_token') ?? '').trim();
+
+      let latValue = String(form.get('lat') ?? '').trim();
+      let lngValue = String(form.get('lng') ?? '').trim();
+      let accuracyValue = String(form.get('accuracy') ?? '').trim();
+
+      if (!employeeId) throw new Error('Selecione o funcionário.');
+      if (!postId) throw new Error('Selecione o posto.');
+
+      if (method === 'qr' && !qrCodeToken) {
+        throw new Error('Informe o token QR do posto.');
+      }
+
+      if (method === 'gps' && (!latValue || !lngValue)) {
+        const position = await getCurrentPosition();
+        latValue = String(position.coords.latitude);
+        lngValue = String(position.coords.longitude);
+        accuracyValue = String(position.coords.accuracy);
+      }
+
+      const lat = latValue ? Number(latValue) : undefined;
+      const lng = lngValue ? Number(lngValue) : undefined;
+      const accuracy = accuracyValue ? Number(accuracyValue) : undefined;
+
+      if (method === 'gps' && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
+        throw new Error('Latitude e longitude precisam ser válidas para presença GPS.');
+      }
+
+      const result = await confirmPresence({
+        employee_id: employeeId,
+        post_id: postId,
+        method,
+        lat,
+        lng,
+        accuracy,
+        qr_code_token: qrCodeToken || undefined,
+        idempotency_key: makeIdempotencyKey(),
+        device_info: navigator.userAgent,
+      });
+
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+
+      formElement.reset();
+      setPresenceMethod('manual');
+      setShowConfirmModal(false);
+      setConfirmSuccess(result.message);
+    } catch (error) {
+      setConfirmError(error instanceof Error ? error.message : 'Erro ao confirmar presença.');
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   const columns = [
     {
@@ -110,7 +206,14 @@ export function PresencePage() {
         title="Presença"
         subtitle={loading ? 'Carregando presenças...' : `${presences.length} registros hoje`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => {
+              setConfirmError(null);
+              setConfirmSuccess(null);
+              setShowConfirmModal(true);
+            }}>
+              <CheckCircle className="w-4 h-4 mr-1" /> Confirmar Presença
+            </Button>
             <SelectField
               id="method-filter"
               placeholder="Método"
@@ -135,6 +238,12 @@ export function PresencePage() {
         }
       />
 
+      {confirmSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {confirmSuccess}
+        </div>
+      )}
+
       <Card padding={false}>
         <DataTable
           columns={columns}
@@ -144,6 +253,92 @@ export function PresencePage() {
           emptyMessage={loading ? "Carregando presenças..." : "Nenhuma presença registrada"}
         />
       </Card>
+
+      {/* Confirm Presence Modal */}
+      <Modal open={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirmar Presença">
+        <form onSubmit={handleConfirmPresence} className="space-y-4">
+          {confirmError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {confirmError}
+            </div>
+          )}
+
+          <SelectField
+            id="presence-employee"
+            name="employee_id"
+            label="Funcionário"
+            placeholder="Selecione..."
+            required
+            options={employees.map(employee => ({
+              value: employee.id,
+              label: `${employee.name} — ${employee.role}`,
+            }))}
+          />
+
+          <SelectField
+            id="presence-post"
+            name="post_id"
+            label="Posto"
+            placeholder="Selecione..."
+            required
+            options={posts.map(post => ({
+              value: post.id,
+              label: post.name,
+            }))}
+          />
+
+          <SelectField
+            id="presence-method"
+            name="method"
+            label="Método"
+            value={presenceMethod}
+            onChange={event => setPresenceMethod(event.target.value as PresenceMethod)}
+            options={[
+              { value: 'manual', label: 'Manual' },
+              { value: 'gps', label: 'GPS' },
+              { value: 'qr', label: 'QR Code' },
+            ]}
+          />
+
+          {presenceMethod === 'qr' && (
+            <Input
+              id="presence-qr-token"
+              name="qr_code_token"
+              label="Token QR do posto"
+              placeholder="Cole o token QR do posto"
+              required
+            />
+          )}
+
+          {presenceMethod === 'gps' && (
+            <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs text-blue-700">
+                Se latitude/longitude ficarem vazias, o navegador tentará capturar sua localização automaticamente.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Input id="presence-lat" name="lat" label="Latitude" type="number" step="any" placeholder="-23.5505" />
+                <Input id="presence-lng" name="lng" label="Longitude" type="number" step="any" placeholder="-46.6333" />
+                <Input id="presence-accuracy" name="accuracy" label="Acurácia (m)" type="number" step="any" placeholder="20" />
+              </div>
+            </div>
+          )}
+
+          {presenceMethod === 'manual' && (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+              Presença manual será registrada sem validação GPS. Use para correções operacionais controladas.
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" className="flex-1" loading={confirming}>
+              Confirmar Presença
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setShowConfirmModal(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Presence Detail Modal */}
       <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Detalhes da Presença" size="lg">

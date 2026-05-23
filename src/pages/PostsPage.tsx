@@ -2,7 +2,7 @@
 // OPERACIONAL5 — Página de Postos
 // ============================================================
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
 import { useEmployees, usePosts } from '@/hooks';
@@ -14,9 +14,62 @@ import type { OperationalPostStatus, Post } from '@/lib/types';
 export function PostsPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
-  const { posts, getStatus, loading } = usePosts();
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const { posts, getStatus, loading, createPost } = usePosts();
   const { employees } = useEmployees({ active: true });
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+
+  const handleCreatePost = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateError(null);
+    setCreating(true);
+
+    try {
+      const form = new FormData(event.currentTarget);
+      const name = String(form.get('name') ?? '').trim();
+      const address = String(form.get('address') ?? '').trim();
+      const clientId = String(form.get('client_id') ?? '').trim();
+
+      const lat = Number(form.get('lat'));
+      const lng = Number(form.get('lng'));
+      const radiusMeters = Number(form.get('radius_meters'));
+      const minStaff = Number(form.get('min_staff'));
+      const toleranceMinutes = Number(form.get('tolerance_minutes') || 15);
+      const rondaIntervalMinutes = Number(form.get('ronda_interval_minutes') || 120);
+
+      if (!name) throw new Error('Informe o nome do posto.');
+      if (!address) throw new Error('Informe o endereço do posto.');
+      if (!clientId) throw new Error('Selecione o cliente.');
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Latitude e longitude precisam ser números válidos.');
+      if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) throw new Error('Raio GPS precisa ser maior que zero.');
+      if (!Number.isFinite(minStaff) || minStaff <= 0) throw new Error('Mínimo de vigilantes precisa ser maior que zero.');
+
+      await createPost({
+        client_id: clientId,
+        name,
+        address,
+        lat,
+        lng,
+        radius_meters: radiusMeters,
+        min_staff: minStaff,
+        tolerance_minutes: toleranceMinutes,
+        require_photo: form.get('require_photo') === 'on',
+        require_ronda: form.get('require_ronda') === 'on',
+        ronda_interval_minutes: rondaIntervalMinutes,
+        indoor_mode: form.get('indoor_mode') === 'on',
+        nfc_uid: undefined,
+        active: true,
+      });
+
+      event.currentTarget.reset();
+      setShowNewModal(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Erro ao criar posto.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const columns = [
     {
@@ -117,39 +170,66 @@ export function PostsPage() {
 
       {/* New Post Modal */}
       <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title="Novo Posto">
-        <div className="space-y-4">
-          <Input id="post-name" label="Nome do Posto" placeholder="Ex: Portaria Principal" />
-          <Input id="post-address" label="Endereço" placeholder="Ex: Rua Augusta, 500" />
+        <form onSubmit={handleCreatePost} className="space-y-4">
+          {createError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+
+          <Input id="post-name" name="name" label="Nome do Posto" placeholder="Ex: Portaria Principal" required />
+          <Input id="post-address" name="address" label="Endereço" placeholder="Ex: Rua Augusta, 500" required />
+
           <div className="grid grid-cols-2 gap-4">
-            <Input id="post-lat" label="Latitude" type="number" placeholder="-23.5505" />
-            <Input id="post-lng" label="Longitude" type="number" placeholder="-46.6333" />
+            <Input id="post-lat" name="lat" label="Latitude" type="number" step="any" placeholder="-23.5505" required />
+            <Input id="post-lng" name="lng" label="Longitude" type="number" step="any" placeholder="-46.6333" required />
           </div>
+
           <div className="grid grid-cols-2 gap-4">
-            <Input id="post-radius" label="Raio GPS (m)" type="number" placeholder="50" />
-            <Input id="post-min-staff" label="Mín. Vigilantes" type="number" placeholder="1" />
+            <Input id="post-radius" name="radius_meters" label="Raio GPS (m)" type="number" min="1" placeholder="50" defaultValue="80" required />
+            <Input id="post-min-staff" name="min_staff" label="Mín. Vigilantes" type="number" min="1" placeholder="1" defaultValue="1" required />
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input id="post-tolerance" name="tolerance_minutes" label="Tolerância (min)" type="number" min="0" defaultValue="15" />
+            <Input id="post-ronda-interval" name="ronda_interval_minutes" label="Intervalo ronda (min)" type="number" min="0" defaultValue="120" />
+          </div>
+
           <SelectField
             id="post-client"
+            name="client_id"
             label="Cliente"
             placeholder="Selecione..."
-            options={[{ value: 'client-001', label: 'Edifícios Corporativos Plaza' }]}
+            required
+            options={[
+              { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
+            ]}
           />
+
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="post-indoor" className="rounded" />
+            <input type="checkbox" id="post-indoor" name="indoor_mode" className="rounded" />
             <label htmlFor="post-indoor" className="text-sm text-gray-700">Modo Indoor (GPS limitado)</label>
           </div>
+
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="post-photo" className="rounded" defaultChecked />
+            <input type="checkbox" id="post-photo" name="require_photo" className="rounded" defaultChecked />
             <label htmlFor="post-photo" className="text-sm text-gray-700">Exigir foto no check-in</label>
           </div>
-          <div className="flex gap-2 pt-2">
-            <Button className="flex-1">Criar Posto</Button>
-            <Button variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
+
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="post-ronda" name="require_ronda" className="rounded" defaultChecked />
+            <label htmlFor="post-ronda" className="text-sm text-gray-700">Exigir ronda</label>
           </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button type="submit" className="flex-1" loading={creating}>Criar Posto</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
+          </div>
+
           <p className="text-xs text-gray-400 text-center">
-            ⚠️ Modo demo — dados não são persistidos
+            Dados serão salvos no Supabase real quando o modo real estiver ativo.
           </p>
-        </div>
+        </form>
       </Modal>
     </div>
   );

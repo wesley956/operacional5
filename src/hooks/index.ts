@@ -25,26 +25,46 @@ export function usePosts(filters?: PostFilters) {
   const [loading, setLoading] = useState(true);
   const profile = useProfile();
   const permissions = getPermissions(profile.role);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [p, s] = await Promise.all([
+        dp.posts.list(filters),
+        dp.posts.getOperationalStatuses(),
+      ]);
+      setPosts(p);
+      setStatuses(s);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [p, s] = await Promise.all([
-          dp.posts.list(filters),
-          dp.posts.getOperationalStatuses(),
-        ]);
-        setPosts(p);
-        setStatuses(s);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
+
+  const createPost = useCallback(async (
+    data: Omit<Post, 'id' | 'created_at' | 'updated_at' | 'qr_code_token' | 'company_id'> & {
+      company_id?: string;
+    }
+  ): Promise<Post> => {
+    const dp = getDataProvider();
+
+    const post = await dp.posts.create({
+      ...data,
+      company_id: data.company_id ?? profile.company_id,
+    } as Omit<Post, 'id' | 'created_at' | 'updated_at' | 'qr_code_token'>);
+
+    await refresh();
+    return post;
+  }, [profile.company_id, refresh]);
 
   const getStatus = (postId: string) => statuses.find(s => s.post_id === postId);
 
-  return { posts, statuses, getStatus, loading, permissions };
+  return { posts, statuses, getStatus, loading, permissions, refresh, createPost };
 }
 
 // ==================== USE EMPLOYEES ====================

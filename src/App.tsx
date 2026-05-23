@@ -4,8 +4,6 @@
 
 import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { setDataProvider } from '@/lib/data/data-provider';
-import { createDemoAdapter } from '@/lib/data/adapters/demo-adapter';
 import { AppLayout } from '@/components/Layout';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -23,10 +21,6 @@ import { NotificationsPage } from '@/pages/NotificationsPage';
 import { ClientPortalPage } from '@/pages/ClientPortalPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
-
-// Inicializar data provider no startup
-// Em produção com Supabase: setDataProvider(createSupabaseAdapter(url, key))
-setDataProvider(createDemoAdapter());
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();

@@ -102,6 +102,33 @@ function assertPassword(password: string): void {
   }
 }
 
+async function findAuthUserByEmail(adminClient: any, email: string): Promise<{ id: string; email?: string } | null> {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+
+    if (error) {
+      throw new ValidationError(error.message, 500);
+    }
+
+    const found = data.users.find((user: { id: string; email?: string }) =>
+      user.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    if (found) {
+      return found;
+    }
+
+    if (data.users.length < 1000) {
+      break;
+    }
+  }
+
+  return null;
+}
+
 async function readPayload(req: Request): Promise<JsonRecord> {
   if (req.method !== 'POST') {
     throw new ValidationError('Método inválido. Use POST.', 405);
@@ -194,6 +221,9 @@ Deno.serve(async (req) => {
     assertEmail(email);
     assertPassword(password);
 
+    let authUserId: string;
+    let authUserWasCreated = false;
+
     const { data: createdUser, error: createUserError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -204,14 +234,52 @@ Deno.serve(async (req) => {
       },
     });
 
-    if (createUserError || !createdUser.user) {
-      throw new ValidationError(createUserError?.message ?? 'Erro ao criar usuário Auth.', 400);
+    if (createdUser?.user) {
+      authUserId = createdUser.user.id;
+      authUserWasCreated = true;
+    } else {
+      const message = createUserError?.message ?? '';
+
+      if (
+        message.toLowerCase().includes('already') ||
+        message.toLowerCase().includes('registered') ||
+        message.toLowerCase().includes('exists')
+      ) {
+        const existingUser = await findAuthUserByEmail(adminClient, email);
+
+        if (!existingUser) {
+          throw new ValidationError('Usuário Auth já existe, mas não foi possível localizar pelo email.', 409);
+        }
+
+        authUserId = existingUser.id;
+      } else {
+        throw new ValidationError(message || 'Erro ao criar usuário Auth.', 400);
+      }
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await adminClient
+      .from('profiles')
+      .select('*')
+      .eq('user_id', authUserId)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      throw new ValidationError(existingProfileError.message, 400);
+    }
+
+    if (existingProfile) {
+      return jsonResponse({
+        ok: true,
+        profile: existingProfile,
+        reused_auth_user: true,
+        reused_profile: true,
+      });
     }
 
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .insert({
-        user_id: createdUser.user.id,
+        user_id: authUserId,
         company_id: callerProfile.company_id,
         role,
         name,
@@ -226,20 +294,24 @@ Deno.serve(async (req) => {
       .single();
 
     if (profileError) {
-      await adminClient.auth.admin.deleteUser(createdUser.user.id);
+      if (authUserWasCreated) {
+        await adminClient.auth.admin.deleteUser(authUserId);
+      }
+
       throw new ValidationError(profileError.message, 400);
     }
 
     await adminClient.from('audit_logs').insert({
       company_id: callerProfile.company_id,
       actor_id: callerProfile.id,
-      action: 'employee_created',
+      action: authUserWasCreated ? 'employee_created' : 'employee_profile_created_for_existing_auth_user',
       entity: 'profiles',
       entity_id: profile.id,
       metadata: {
         email,
         role,
-        created_user_id: createdUser.user.id,
+        auth_user_id: authUserId,
+        auth_user_was_created: authUserWasCreated,
       },
     });
 

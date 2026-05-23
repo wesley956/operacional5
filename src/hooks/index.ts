@@ -4,10 +4,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { getDataProvider } from '@/lib/data/data-provider';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { useProfile } from '@/context/AuthContext';
 import { getPermissions } from '@/lib/utils';
 import type {
-  Post, Profile, Presence, Occurrence, FTRequest,
+  Post, Profile, Role, Presence, Occurrence, FTRequest,
   OperationalPostStatus, DashboardSummary, Schedule,
 } from '@/lib/types';
 import type {
@@ -78,20 +79,72 @@ export function usePosts(filters?: PostFilters) {
 export function useEmployees(filters?: EmployeeFilters) {
   const [employees, setEmployees] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.employees.list(filters);
+      setEmployees(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.employees.list(filters);
-        setEmployees(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
-  return { employees, loading };
+  const createEmployee = useCallback(async (input: {
+    name: string;
+    email: string;
+    password: string;
+    phone?: string;
+    role: Role;
+    ft_available: boolean;
+    regime_trabalho: Profile['regime_trabalho'];
+    data_referencia_ciclo: string;
+  }): Promise<Profile> => {
+    const supabase = getSupabaseClient();
+
+    const { data, error } = await supabase.functions.invoke('create-employee', {
+      body: input,
+    });
+
+    if (error) {
+      const errorWithContext = error as { context?: Response };
+      const contextBody = errorWithContext.context
+        ? await errorWithContext.context.json().catch(() => null)
+        : null;
+
+      throw new Error(
+        contextBody?.error ??
+        contextBody?.message ??
+        error.message ??
+        'Erro ao chamar Edge Function create-employee.'
+      );
+    }
+
+    if (!data?.ok) {
+      throw new Error(data?.error ?? 'Erro ao cadastrar funcionário.');
+    }
+
+    const createdProfile = data.profile as Profile;
+
+    setEmployees(current => {
+      const exists = current.some(employee => employee.id === createdProfile.id);
+      if (exists) {
+        return current.map(employee => employee.id === createdProfile.id ? createdProfile : employee);
+      }
+      return [...current, createdProfile].sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    await refresh();
+    return createdProfile;
+  }, [refresh]);
+
+  return { employees, loading, refresh, createEmployee };
 }
 
 // ==================== USE PRESENCE ====================

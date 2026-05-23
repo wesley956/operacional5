@@ -2,7 +2,7 @@
 // OPERACIONAL5 — Página de Funcionários
 // ============================================================
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees } from '@/hooks';
@@ -22,10 +22,57 @@ export function EmployeesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
-  const { employees, loading } = useEmployees({ active: true });
+  const { employees, loading, createEmployee } = useEmployees({ active: true });
   const filtered = roleFilter ? employees.filter(e => e.role === roleFilter) : employees;
   const selected = selectedId ? employees.find(e => e.id === selectedId) : null;
+
+  const handleCreateEmployee = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setCreateError(null);
+    setCreateSuccess(null);
+    setCreating(true);
+
+    try {
+      const form = new FormData(formElement);
+
+      const name = String(form.get('name') ?? '').trim();
+      const email = String(form.get('email') ?? '').trim();
+      const password = String(form.get('password') ?? '');
+      const phone = String(form.get('phone') ?? '').trim();
+      const role = String(form.get('role') ?? '').trim() as Role;
+      const regimeTrabalho = String(form.get('regime_trabalho') ?? '12x36').trim() as Profile['regime_trabalho'];
+
+      if (!name) throw new Error('Informe o nome do funcionário.');
+      if (!email) throw new Error('Informe o email do funcionário.');
+      if (!password || password.length < 8) throw new Error('Informe uma senha temporária com pelo menos 8 caracteres.');
+      if (!role) throw new Error('Selecione o cargo.');
+
+      const employee = await createEmployee({
+        name,
+        email,
+        password,
+        phone: phone || undefined,
+        role,
+        ft_available: form.get('ft_available') === 'on',
+        regime_trabalho: regimeTrabalho,
+        data_referencia_ciclo: String(form.get('data_referencia_ciclo') || '2024-01-01'),
+      });
+
+      formElement.reset();
+      setRoleFilter('');
+      setCreateSuccess(`Funcionário ${employee.name} cadastrado com sucesso.`);
+      setShowNewModal(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Erro ao cadastrar funcionário.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const columns = [
     {
@@ -99,12 +146,22 @@ export function EmployeesPage() {
               onChange={e => setRoleFilter(e.target.value)}
               className="w-40"
             />
-            <Button onClick={() => setShowNewModal(true)}>
+            <Button onClick={() => {
+              setCreateError(null);
+              setCreateSuccess(null);
+              setShowNewModal(true);
+            }}>
               <Plus className="w-4 h-4 mr-1" /> Novo
             </Button>
           </div>
         }
       />
+
+      {createSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {createSuccess}
+        </div>
+      )}
 
       <Card padding={false}>
         <DataTable
@@ -149,26 +206,62 @@ export function EmployeesPage() {
 
       {/* New Employee Modal */}
       <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title="Novo Funcionário">
-        <div className="space-y-4">
-          <Input id="emp-name" label="Nome completo" placeholder="João da Silva" />
-          <Input id="emp-email" label="Email" type="email" placeholder="joao@empresa.com" />
-          <Input id="emp-phone" label="Telefone" placeholder="(11) 99999-9999" />
+        <form onSubmit={handleCreateEmployee} className="space-y-4">
+          {createError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+
+          <Input id="emp-name" name="name" label="Nome completo" placeholder="João da Silva" required />
+          <Input id="emp-email" name="email" label="Email de acesso" type="email" placeholder="joao@empresa.com" required />
+          <Input id="emp-password" name="password" label="Senha temporária" type="password" placeholder="Mínimo 8 caracteres" minLength={8} required />
+          <Input id="emp-phone" name="phone" label="Telefone" placeholder="(11) 99999-9999" />
+
           <SelectField
             id="emp-role"
+            name="role"
             label="Cargo"
             placeholder="Selecione..."
+            required
             options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))}
           />
+
+          <SelectField
+            id="emp-regime"
+            name="regime_trabalho"
+            label="Regime de trabalho"
+            defaultValue="12x36"
+            options={[
+              { value: '12x36', label: '12x36' },
+              { value: '12x36_noturno', label: '12x36 Noturno' },
+              { value: '24x48', label: '24x48' },
+              { value: 'custom', label: 'Personalizado' },
+            ]}
+          />
+
+          <Input
+            id="emp-cycle-date"
+            name="data_referencia_ciclo"
+            label="Data referência do ciclo"
+            type="date"
+            defaultValue="2024-01-01"
+          />
+
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="emp-ft" className="rounded" />
+            <input type="checkbox" id="emp-ft" name="ft_available" className="rounded" />
             <label htmlFor="emp-ft" className="text-sm text-gray-700">Disponível para FT</label>
           </div>
+
           <div className="flex gap-2 pt-2">
-            <Button className="flex-1">Cadastrar</Button>
-            <Button variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
+            <Button type="submit" className="flex-1" loading={creating}>Cadastrar</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
           </div>
-          <p className="text-xs text-gray-400 text-center">⚠️ Modo demo — dados não persistidos</p>
-        </div>
+
+          <p className="text-xs text-gray-400 text-center">
+            O sistema criará o login e o perfil operacional automaticamente.
+          </p>
+        </form>
       </Modal>
     </div>
   );

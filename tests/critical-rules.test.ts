@@ -3,11 +3,10 @@
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
-import { haversineDistance, isWithinGeofence, checkGeofence, detectMockLocation, formatDistance } from '../src/lib/geo';
+import { haversineDistance, isWithinGeofence, checkGeofence, detectMockLocation } from '../src/lib/geo';
 import { is12x36WorkDay, isWithinShift, detectScheduleConflicts } from '../src/lib/domain/cycle-12x36';
 import { getPostOperationalStatus } from '../src/lib/domain/post-status';
 import { getPermissions, hasMinimumRole, getRoleLevel } from '../src/lib/utils';
-import type { Role, OperationalStatus } from '../src/lib/types';
 
 // ==================== GEO / GEOFENCE ====================
 describe('Haversine Distance', () => {

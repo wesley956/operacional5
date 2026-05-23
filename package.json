@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "check:mock-isolation": "node scripts/check-mock-isolation.cjs",
-    "verify": "npm run check:mock-isolation && npm run build && npm run lint && npm run test",
+    "verify": "npm run check:mock-isolation && npm run lint && npm run build && npm run test",
     "build:singlefile": "vite build --mode singlefile",
     "test:coverage": "vitest run --coverage"
   },
@@ -40,5 +40,9 @@
     "vite": "7.3.2",
     "vite-plugin-singlefile": "2.3.0",
     "vitest": "^4.1.7"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10.0.0"
   }
 }

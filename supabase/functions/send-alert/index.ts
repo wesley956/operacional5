@@ -9,11 +9,18 @@ import {
   readJsonObject,
   requiredString,
 } from '../_shared/validation.ts';
+import { enforceRateLimit } from '../_shared/rate-limit.ts';
 
 const CHANNELS = ['system', 'push', 'sms', 'email'] as const;
 
 Deno.serve(async (req) => {
   try {
+    enforceRateLimit(req, {
+      keyPrefix: 'send-alert',
+      maxRequests: 30,
+      windowMs: 60000,
+    });
+
     const body = await readJsonObject(req);
 
     const payload = {

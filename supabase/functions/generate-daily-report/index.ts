@@ -9,9 +9,16 @@ import {
   readJsonObject,
   requiredString,
 } from '../_shared/validation.ts';
+import { enforceRateLimit } from '../_shared/rate-limit.ts';
 
 Deno.serve(async (req) => {
   try {
+    enforceRateLimit(req, {
+      keyPrefix: 'generate-daily-report',
+      maxRequests: 10,
+      windowMs: 60000,
+    });
+
     const body = await readJsonObject(req);
 
     const companyId = requiredString(body, 'company_id');

@@ -13,6 +13,7 @@ import {
   optionalString,
   readJsonObject,
 } from '../_shared/validation.ts';
+import { enforceRateLimit } from '../_shared/rate-limit.ts';
 
 serve(async (req) => {
   const supabase = createClient(
@@ -21,6 +22,12 @@ serve(async (req) => {
   );
 
   try {
+    enforceRateLimit(req, {
+      keyPrefix: 'escalate-alerts',
+      maxRequests: 20,
+      windowMs: 60000,
+    });
+
     const body = await readJsonObject(req);
     const companyIdFilter = optionalString(body, 'company_id');
     const dryRun = optionalBoolean(body, 'dry_run') ?? false;

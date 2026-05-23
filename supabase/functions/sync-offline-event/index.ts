@@ -14,6 +14,7 @@ import {
   requiredObject,
   requiredString,
 } from '../_shared/validation.ts';
+import { enforceRateLimit } from '../_shared/rate-limit.ts';
 
 const OFFLINE_EVENT_TYPES = ['presence', 'occurrence', 'sos', 'ronda', 'handover'] as const;
 
@@ -24,6 +25,12 @@ serve(async (req) => {
   );
 
   try {
+    enforceRateLimit(req, {
+      keyPrefix: 'sync-offline-event',
+      maxRequests: 60,
+      windowMs: 60000,
+    });
+
     const body = await readJsonObject(req);
 
     const type = requiredEnum(body, 'type', OFFLINE_EVENT_TYPES);

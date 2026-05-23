@@ -117,6 +117,10 @@ export function handleEdgeError(error: unknown): Response {
     return jsonResponse({ ok: false, error: error.message }, error.status);
   }
 
+  if (error instanceof Error && error.name === 'RateLimitError') {
+    return jsonResponse({ ok: false, error: error.message }, 429);
+  }
+
   return jsonResponse({
     ok: false,
     error: error instanceof Error ? error.message : 'Erro desconhecido',

@@ -15,6 +15,7 @@ import type {
   PresenceFilters,
   OccurrenceFilters,
   FTFilters,
+  RondaFilters,
   NotificationFilters,
   ScheduleFilters,
   ConfirmPresenceInput,
@@ -77,6 +78,14 @@ function asFT(row: DbRow): FTRequest {
 
 function asSchedule(row: DbRow): Schedule {
   return row as unknown as Schedule;
+}
+
+function asRondaPoint(row: DbRow): RondaPointData {
+  return row as unknown as RondaPointData;
+}
+
+function asRondaLog(row: DbRow): RondaLogData {
+  return row as unknown as RondaLogData;
 }
 
 function normalizeProfile(row: DbRow): Profile {
@@ -896,14 +905,111 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
     },
 
     ronda: {
-      getPoints(_postId: string): Promise<RondaPointData[]> {
-        return failNotImplemented('ronda.getPoints será implementado em etapa posterior');
+      async getPoints(postId: string): Promise<RondaPointData[]> {
+        const { data, error } = await supabase
+          .from('ronda_points')
+          .select('*')
+          .eq('post_id', postId)
+          .eq('active', true)
+          .order('sequence_order', { ascending: true });
+
+        assertNoError(error, 'Erro ao listar pontos de ronda');
+        return ((data ?? []) as DbRow[]).map(asRondaPoint);
       },
-      getLogs(): Promise<RondaLogData[]> {
-        return failNotImplemented('ronda.getLogs será implementado em etapa posterior');
+
+      async getLogs(filters?: RondaFilters): Promise<RondaLogData[]> {
+        const filtersMeta = filters as RondaFilters & {
+          date_from?: string;
+          date_to?: string;
+        };
+
+        let query = supabase
+          .from('ronda_logs')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (filters?.post_id) query = query.eq('post_id', filters.post_id);
+        if (filters?.employee_id) query = query.eq('employee_id', filters.employee_id);
+        if (filters?.status) query = query.eq('status', filters.status);
+        if (filtersMeta?.date_from) query = query.gte('created_at', filtersMeta.date_from);
+        if (filtersMeta?.date_to) query = query.lte('created_at', filtersMeta.date_to);
+
+        const { data, error } = await query;
+        assertNoError(error, 'Erro ao listar logs de ronda');
+        return ((data ?? []) as DbRow[]).map(asRondaLog);
       },
-      confirmPoint(_input: ConfirmRondaInput): Promise<RondaLogData> {
-        return failNotImplemented('ronda.confirmPoint será implementado em etapa posterior');
+
+      async confirmPoint(input: ConfirmRondaInput): Promise<RondaLogData> {
+        const { data: existing, error: existingError } = await supabase
+          .from('ronda_logs')
+          .select('*')
+          .eq('idempotency_key', input.idempotency_key)
+          .maybeSingle();
+
+        assertNoError(existingError, 'Erro ao verificar idempotência da ronda');
+
+        if (existing) {
+          return asRondaLog(existing as DbRow);
+        }
+
+        const { data: pointRow, error: pointError } = await supabase
+          .from('ronda_points')
+          .select('*')
+          .eq('id', input.ronda_point_id)
+          .eq('active', true)
+          .single();
+
+        assertNoError(pointError, 'Erro ao buscar ponto de ronda');
+
+        if (!pointRow) {
+          throw new Error('Ponto de ronda não encontrado.');
+        }
+
+        const point = asRondaPoint(pointRow as DbRow);
+
+        if (point.require_photo && !input.photo_url) {
+          throw new Error('Foto obrigatória para confirmar este ponto de ronda.');
+        }
+
+        if (
+          typeof input.lat === 'number' &&
+          typeof input.lng === 'number'
+        ) {
+          const check = checkGeofence(
+            input.lat,
+            input.lng,
+            point.lat,
+            point.lng,
+            point.radius_meters,
+          );
+
+          if (!check.within_fence) {
+            const distance = haversineDistance(input.lat, input.lng, point.lat, point.lng);
+            throw new Error(
+              `Fora do raio do ponto de ronda. Distância: ${Math.round(distance)}m (raio: ${point.radius_meters}m)`
+            );
+          }
+        }
+
+        const { data, error } = await supabase
+          .from('ronda_logs')
+          .insert({
+            ronda_point_id: input.ronda_point_id,
+            employee_id: input.employee_id,
+            post_id: input.post_id,
+            status: 'concluida',
+            confirmed_at: new Date().toISOString(),
+            gps_lat: input.lat,
+            gps_lng: input.lng,
+            photo_url: input.photo_url,
+            notes: input.notes,
+            idempotency_key: input.idempotency_key,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao confirmar ponto de ronda');
+        return asRondaLog(data as DbRow);
       },
     },
 

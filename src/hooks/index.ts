@@ -393,20 +393,45 @@ export function useNotifications(filters?: NotificationFilters) {
 export function useSchedules(filters?: ScheduleFilters) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
+  const profile = useProfile();
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.schedules.list(filters);
+      setSchedules(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.schedules.list(filters);
-        setSchedules(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
-  return { schedules, loading };
+  const createSchedule = useCallback(async (
+    data: Omit<Schedule, 'id' | 'created_at' | 'company_id'> & {
+      company_id?: string;
+    }
+  ): Promise<Schedule> => {
+    const dp = getDataProvider();
+
+    const schedule = await dp.schedules.create({
+      ...data,
+      company_id: data.company_id ?? profile.company_id,
+    } as Omit<Schedule, 'id' | 'created_at'>);
+
+    setSchedules(current => [...current, schedule].sort(
+      (a, b) => new Date(a.shift_start).getTime() - new Date(b.shift_start).getTime()
+    ));
+
+    await refresh();
+    return schedule;
+  }, [profile.company_id, refresh]);
+
+  return { schedules, loading, refresh, createSchedule };
 }
 
 // ==================== USE OFFLINE STATUS ====================

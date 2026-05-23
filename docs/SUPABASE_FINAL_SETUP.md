@@ -23,3 +23,12 @@ Bucket privado: evidence
 
 Estrutura recomendada:
 evidence/{company_id}/{post_id}/{yyyy-mm}/{type}/{file_id}.jpg
+
+
+## Web client
+
+O client web fica em:
+
+src/lib/supabase/client.ts
+
+Regra importante: nunca usar SUPABASE_SERVICE_ROLE_KEY no frontend. O frontend usa apenas VITE_SUPABASE_ANON_KEY com RLS ativo.

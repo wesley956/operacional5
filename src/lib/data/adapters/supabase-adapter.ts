@@ -760,26 +760,128 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         assertNoError(error, 'Erro ao listar FTs');
         return ((data ?? []) as DbRow[]).map(asFT);
       },
+
       async getById(id: string): Promise<FTRequest | null> {
-        const { data, error } = await supabase.from('ft_requests').select('*').eq('id', id).maybeSingle();
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
         assertNoError(error, 'Erro ao buscar FT');
         return data ? asFT(data as DbRow) : null;
       },
-      open(_input: OpenFTInput): Promise<FTRequest> {
-        return failNotImplemented('ft.open será implementado em etapa posterior');
+
+      async open(input: OpenFTInput): Promise<FTRequest> {
+        const profile = await getCurrentProfile(supabase);
+
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .insert({
+            company_id: profile.company_id,
+            post_id: input.post_id,
+            schedule_id: input.schedule_id,
+            opened_by: input.opened_by || profile.id,
+            reason: input.reason,
+            urgency: input.urgency,
+            status: 'aberta',
+            notes: input.notes,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao abrir FT');
+
+        const ft = asFT(data as DbRow);
+
+        const { data: supervisors } = await supabase
+          .from('supervisor_posts')
+          .select('supervisor_id')
+          .eq('post_id', input.post_id);
+
+        for (const supervisor of ((supervisors ?? []) as DbRow[])) {
+          if (!supervisor.supervisor_id) continue;
+
+          await supabase.from('alert_log').insert({
+            company_id: profile.company_id,
+            type: 'ft_aberta',
+            target_user_id: supervisor.supervisor_id,
+            post_id: input.post_id,
+            ft_request_id: ft.id,
+            payload: {
+              message: `FT aberta: ${input.reason}`,
+              urgency: input.urgency,
+            },
+            channel: 'system',
+            status: 'sent',
+          });
+        }
+
+        return ft;
       },
-      assign(_ftId: string, _employeeId: string): Promise<FTRequest> {
-        return failNotImplemented('ft.assign será implementado em etapa posterior');
+
+      async assign(ftId: string, employeeId: string): Promise<FTRequest> {
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .update({
+            assigned_to: employeeId,
+            status: 'acionando',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ftId)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao acionar funcionário para FT');
+        return asFT(data as DbRow);
       },
-      accept(_ftId: string): Promise<FTRequest> {
-        return failNotImplemented('ft.accept será implementado em etapa posterior');
+
+      async accept(ftId: string): Promise<FTRequest> {
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .update({
+            status: 'aceita',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ftId)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao aceitar FT');
+        return asFT(data as DbRow);
       },
-      resolve(_ftId: string): Promise<FTRequest> {
-        return failNotImplemented('ft.resolve será implementado em etapa posterior');
+
+      async resolve(ftId: string): Promise<FTRequest> {
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .update({
+            status: 'resolvida',
+            resolved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ftId)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao resolver FT');
+        return asFT(data as DbRow);
       },
-      cancel(_ftId: string): Promise<FTRequest> {
-        return failNotImplemented('ft.cancel será implementado em etapa posterior');
+
+      async cancel(ftId: string): Promise<FTRequest> {
+        const { data, error } = await supabase
+          .from('ft_requests')
+          .update({
+            status: 'cancelada',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ftId)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao cancelar FT');
+        return asFT(data as DbRow);
       },
+
       async getCandidates(_ftId: string): Promise<Profile[]> {
         const { data, error } = await supabase
           .from('profiles')

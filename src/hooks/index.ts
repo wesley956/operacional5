@@ -62,9 +62,16 @@ export function usePosts(filters?: PostFilters) {
     return post;
   }, [profile.company_id, refresh]);
 
+  const updatePost = useCallback(async (id: string, data: Partial<Post>): Promise<Post> => {
+    const dp = getDataProvider();
+    const post = await dp.posts.update(id, data);
+    await refresh();
+    return post;
+  }, [refresh]);
+
   const getStatus = (postId: string) => statuses.find(s => s.post_id === postId);
 
-  return { posts, statuses, getStatus, loading, permissions, refresh, createPost };
+  return { posts, statuses, getStatus, loading, permissions, refresh, createPost, updatePost };
 }
 
 // ==================== USE EMPLOYEES ====================

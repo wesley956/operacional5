@@ -13,10 +13,13 @@ import type { OperationalPostStatus, Post } from '@/lib/types';
 
 export function PostsPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const { posts, getStatus, loading, createPost } = usePosts();
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const { posts, getStatus, loading, createPost, updatePost } = usePosts();
   const { employees } = useEmployees({ active: true });
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
 
@@ -68,6 +71,56 @@ export function PostsPage() {
       setCreateError(error instanceof Error ? error.message : 'Erro ao criar posto.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleUpdatePost = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingPost) return;
+
+    setUpdateError(null);
+    setUpdating(true);
+
+    try {
+      const form = new FormData(event.currentTarget);
+      const name = String(form.get('name') ?? '').trim();
+      const address = String(form.get('address') ?? '').trim();
+      const clientId = String(form.get('client_id') ?? '').trim();
+
+      const lat = Number(form.get('lat'));
+      const lng = Number(form.get('lng'));
+      const radiusMeters = Number(form.get('radius_meters'));
+      const minStaff = Number(form.get('min_staff'));
+      const toleranceMinutes = Number(form.get('tolerance_minutes') || 15);
+      const rondaIntervalMinutes = Number(form.get('ronda_interval_minutes') || 120);
+
+      if (!name) throw new Error('Informe o nome do posto.');
+      if (!address) throw new Error('Informe o endereço do posto.');
+      if (!clientId) throw new Error('Selecione o cliente.');
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Latitude e longitude precisam ser números válidos.');
+      if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) throw new Error('Raio GPS precisa ser maior que zero.');
+      if (!Number.isFinite(minStaff) || minStaff <= 0) throw new Error('Mínimo de vigilantes precisa ser maior que zero.');
+
+      await updatePost(editingPost.id, {
+        client_id: clientId,
+        name,
+        address,
+        lat,
+        lng,
+        radius_meters: radiusMeters,
+        min_staff: minStaff,
+        tolerance_minutes: toleranceMinutes,
+        require_photo: form.get('require_photo') === 'on',
+        require_ronda: form.get('require_ronda') === 'on',
+        ronda_interval_minutes: rondaIntervalMinutes,
+        indoor_mode: form.get('indoor_mode') === 'on',
+      });
+
+      setEditingPost(null);
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : 'Erro ao atualizar posto.');
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -133,7 +186,15 @@ export function PostsPage() {
           <button onClick={(e) => { e.stopPropagation(); setSelectedPost(p); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600">
             <Eye className="w-4 h-4" />
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setUpdateError(null);
+              setEditingPost(p);
+            }}
+            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600"
+            title="Editar posto"
+          >
             <Edit className="w-4 h-4" />
           </button>
         </div>
@@ -166,6 +227,69 @@ export function PostsPage() {
       {/* Post Details Modal */}
       <Modal open={!!selectedPost} onClose={() => setSelectedPost(null)} title="Detalhes do Posto" size="lg">
         {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} />}
+      </Modal>
+
+
+      {/* Edit Post Modal */}
+      <Modal open={!!editingPost} onClose={() => setEditingPost(null)} title="Editar Posto">
+        {editingPost && (
+          <form key={editingPost.id} onSubmit={handleUpdatePost} className="space-y-4">
+            {updateError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {updateError}
+              </div>
+            )}
+
+            <Input id="edit-post-name" name="name" label="Nome do Posto" defaultValue={editingPost.name} required />
+            <Input id="edit-post-address" name="address" label="Endereço" defaultValue={editingPost.address} required />
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input id="edit-post-lat" name="lat" label="Latitude" type="number" step="any" defaultValue={editingPost.lat} required />
+              <Input id="edit-post-lng" name="lng" label="Longitude" type="number" step="any" defaultValue={editingPost.lng} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input id="edit-post-radius" name="radius_meters" label="Raio GPS (m)" type="number" min="1" defaultValue={editingPost.radius_meters} required />
+              <Input id="edit-post-min-staff" name="min_staff" label="Mín. Vigilantes" type="number" min="1" defaultValue={editingPost.min_staff} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input id="edit-post-tolerance" name="tolerance_minutes" label="Tolerância (min)" type="number" min="0" defaultValue={editingPost.tolerance_minutes} />
+              <Input id="edit-post-ronda-interval" name="ronda_interval_minutes" label="Intervalo ronda (min)" type="number" min="0" defaultValue={editingPost.ronda_interval_minutes} />
+            </div>
+
+            <SelectField
+              id="edit-post-client"
+              name="client_id"
+              label="Cliente"
+              required
+              defaultValue={editingPost.client_id}
+              options={[
+                { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
+              ]}
+            />
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-post-indoor" name="indoor_mode" className="rounded" defaultChecked={editingPost.indoor_mode} />
+              <label htmlFor="edit-post-indoor" className="text-sm text-gray-700">Modo Indoor (GPS limitado)</label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-post-photo" name="require_photo" className="rounded" defaultChecked={editingPost.require_photo} />
+              <label htmlFor="edit-post-photo" className="text-sm text-gray-700">Exigir foto no check-in</label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-post-ronda" name="require_ronda" className="rounded" defaultChecked={editingPost.require_ronda} />
+              <label htmlFor="edit-post-ronda" className="text-sm text-gray-700">Exigir ronda</label>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" className="flex-1" loading={updating}>Salvar Alterações</Button>
+              <Button type="button" variant="secondary" onClick={() => setEditingPost(null)}>Cancelar</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* New Post Modal */}

@@ -51,9 +51,6 @@ import type {
 
 type DbRow = Record<string, unknown>;
 
-function failNotImplemented(feature: string): Promise<never> {
-  return Promise.reject(new Error(`SupabaseAdapter: ${feature} ainda não implementado nesta etapa.`));
-}
 
 function assertNoError(error: unknown, context: string): void {
   if (error) {
@@ -1311,7 +1308,10 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
 
     schedules: {
       async list(filters?: ScheduleFilters): Promise<Schedule[]> {
-        let query = supabase.from('schedules').select('*').order('shift_start', { ascending: true });
+        let query = supabase
+          .from('schedules')
+          .select('*')
+          .order('shift_start', { ascending: true });
 
         if (filters?.post_id) query = query.eq('post_id', filters.post_id);
         if (filters?.employee_id) query = query.eq('employee_id', filters.employee_id);
@@ -1321,14 +1321,83 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         assertNoError(error, 'Erro ao listar escalas');
         return ((data ?? []) as DbRow[]).map(asSchedule);
       },
+
       async getByEmployee(employeeId: string): Promise<Schedule[]> {
-        return this.list({ employee_id: employeeId });
+        const { data, error } = await supabase
+          .from('schedules')
+          .select('*')
+          .eq('employee_id', employeeId)
+          .eq('is_active', true)
+          .order('shift_start', { ascending: true });
+
+        assertNoError(error, 'Erro ao listar escalas do funcionário');
+        return ((data ?? []) as DbRow[]).map(asSchedule);
       },
-      create(_data: Omit<Schedule, 'id' | 'created_at'>): Promise<Schedule> {
-        return failNotImplemented('schedules.create será implementado em etapa posterior');
+
+      async create(data: Omit<Schedule, 'id' | 'created_at'>): Promise<Schedule> {
+        const { data: row, error } = await supabase
+          .from('schedules')
+          .insert({
+            company_id: data.company_id,
+            post_id: data.post_id,
+            employee_id: data.employee_id,
+            shift_start: data.shift_start,
+            shift_end: data.shift_end,
+            regime: data.regime,
+            cycle_reference_date: data.cycle_reference_date,
+            weekdays: data.weekdays,
+            template_id: data.template_id,
+            is_active: data.is_active,
+            status: data.status,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar escala');
+        return asSchedule(row as DbRow);
       },
-      detectConflicts(_employeeId: string): Promise<ScheduleConflictData[]> {
-        return Promise.resolve([]);
+
+      async detectConflicts(employeeId: string): Promise<ScheduleConflictData[]> {
+        const schedules = await this.getByEmployee(employeeId);
+        const activeSchedules = schedules
+          .filter(schedule => schedule.is_active && schedule.status === 'active')
+          .sort((a, b) => new Date(a.shift_start).getTime() - new Date(b.shift_start).getTime());
+
+        const conflicts: ScheduleConflictData[] = [];
+
+        for (let i = 0; i < activeSchedules.length; i += 1) {
+          for (let j = i + 1; j < activeSchedules.length; j += 1) {
+            const first = activeSchedules[i];
+            const second = activeSchedules[j];
+
+            const firstStart = new Date(first.shift_start).getTime();
+            const firstEnd = new Date(first.shift_end).getTime();
+            const secondStart = new Date(second.shift_start).getTime();
+            const secondEnd = new Date(second.shift_end).getTime();
+
+            const overlaps = firstStart < secondEnd && secondStart < firstEnd;
+
+            if (!overlaps) continue;
+
+            const overlapStartMs = Math.max(firstStart, secondStart);
+            const overlapEndMs = Math.min(firstEnd, secondEnd);
+
+            const firstInsideSecond = firstStart >= secondStart && firstEnd <= secondEnd;
+            const secondInsideFirst = secondStart >= firstStart && secondEnd <= firstEnd;
+
+            conflicts.push({
+              schedule_id_1: first.id,
+              schedule_id_2: second.id,
+              post_id_1: first.post_id,
+              post_id_2: second.post_id,
+              overlap_start: new Date(overlapStartMs).toISOString(),
+              overlap_end: new Date(overlapEndMs).toISOString(),
+              conflict_type: firstInsideSecond || secondInsideFirst ? 'full' : 'partial',
+            });
+          }
+        }
+
+        return conflicts;
       },
     },
   };

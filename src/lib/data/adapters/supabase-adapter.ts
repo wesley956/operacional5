@@ -114,6 +114,36 @@ function payloadMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+async function getCurrentProfileRow(supabase: SupabaseClient): Promise<DbRow> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  assertNoError(userError, 'Erro ao buscar usuário autenticado');
+
+  const userId = userData.user?.id;
+
+  if (!userId) {
+    throw new Error('Usuário não autenticado.');
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('active', true)
+    .single();
+
+  assertNoError(error, 'Erro ao buscar perfil autenticado');
+
+  if (!data) {
+    throw new Error('Perfil autenticado não encontrado.');
+  }
+
+  return data as DbRow;
+}
+
+async function getCurrentProfile(supabase: SupabaseClient): Promise<Profile> {
+  return normalizeProfile(await getCurrentProfileRow(supabase));
+}
+
 async function countTable(
   supabase: SupabaseClient,
   table: string,
@@ -488,8 +518,70 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
     },
 
     occurrences: {
-      create(_input: CreateOccurrenceInput): Promise<Occurrence> {
-        return failNotImplemented('occurrences.create será implementado na etapa 5/10');
+      async create(input: CreateOccurrenceInput): Promise<Occurrence> {
+        const { data: existing, error: existingError } = await supabase
+          .from('occurrences')
+          .select('*')
+          .eq('idempotency_key', input.idempotency_key)
+          .maybeSingle();
+
+        assertNoError(existingError, 'Erro ao verificar idempotência da ocorrência');
+
+        if (existing) {
+          return asOccurrence(existing as DbRow);
+        }
+
+        const profile = await getCurrentProfile(supabase);
+
+        const insertPayload = {
+          company_id: profile.company_id,
+          post_id: input.post_id,
+          employee_id: input.employee_id,
+          type: input.type,
+          severity: input.severity,
+          description: input.description,
+          photo_url: input.photo_url,
+          gps_lat: input.lat,
+          gps_lng: input.lng,
+          status: 'aberta',
+          idempotency_key: input.idempotency_key,
+        };
+
+        const { data, error } = await supabase
+          .from('occurrences')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar ocorrência');
+
+        const occurrence = asOccurrence(data as DbRow);
+
+        if (occurrence.severity === 'critica') {
+          const { data: supervisors } = await supabase
+            .from('supervisor_posts')
+            .select('supervisor_id')
+            .eq('post_id', input.post_id);
+
+          for (const supervisor of ((supervisors ?? []) as DbRow[])) {
+            if (!supervisor.supervisor_id) continue;
+
+            await supabase.from('alert_log').insert({
+              company_id: profile.company_id,
+              type: 'ocorrencia_critica',
+              target_user_id: supervisor.supervisor_id,
+              post_id: input.post_id,
+              occurrence_id: occurrence.id,
+              payload: {
+                message: `Ocorrência crítica registrada: ${input.description ?? input.type}`,
+              },
+              channel: 'system',
+              status: 'sent',
+            });
+          }
+        }
+
+        return occurrence;
       },
 
       async list(filters?: OccurrenceFilters): Promise<Occurrence[]> {
@@ -512,22 +604,137 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         return data ? asOccurrence(data as DbRow) : null;
       },
 
-      acknowledge(_id: string, _role: Role): Promise<Occurrence> {
-        return failNotImplemented('occurrences.acknowledge será implementado em etapa posterior');
+      async acknowledge(id: string, role: Role): Promise<Occurrence> {
+        const profile = await getCurrentProfile(supabase);
+
+        const updatePayload: Record<string, unknown> = {
+          status: 'em_tratamento',
+          updated_at: new Date().toISOString(),
+        };
+
+        const effectiveRole = profile.role ?? role;
+
+        if (effectiveRole === 'supervisor') {
+          updatePayload.ack_supervisor = profile.id;
+        }
+
+        if (['gerente', 'diretor', 'admin'].includes(effectiveRole)) {
+          updatePayload.ack_gerente = profile.id;
+        }
+
+        const { data, error } = await supabase
+          .from('occurrences')
+          .update(updatePayload)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao reconhecer ocorrência');
+        return asOccurrence(data as DbRow);
       },
 
-      resolve(_id: string, _resolvedBy: string): Promise<Occurrence> {
-        return failNotImplemented('occurrences.resolve será implementado em etapa posterior');
+      async resolve(id: string, resolvedBy: string): Promise<Occurrence> {
+        const profile = await getCurrentProfile(supabase);
+
+        const { data, error } = await supabase
+          .from('occurrences')
+          .update({
+            status: 'resolvida',
+            resolved_by: resolvedBy || profile.id,
+            resolved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao resolver ocorrência');
+        return asOccurrence(data as DbRow);
       },
     },
 
     sos: {
-      trigger(_input: TriggerSOSInput): Promise<Occurrence> {
-        return failNotImplemented('sos.trigger será implementado em etapa posterior');
+      async trigger(input: TriggerSOSInput): Promise<Occurrence> {
+        const { data: existing, error: existingError } = await supabase
+          .from('occurrences')
+          .select('*')
+          .eq('idempotency_key', input.idempotency_key)
+          .maybeSingle();
+
+        assertNoError(existingError, 'Erro ao verificar idempotência do SOS');
+
+        if (existing) {
+          return asOccurrence(existing as DbRow);
+        }
+
+        const profile = await getCurrentProfile(supabase);
+
+        const { data, error } = await supabase
+          .from('occurrences')
+          .insert({
+            company_id: profile.company_id,
+            post_id: input.post_id,
+            employee_id: input.employee_id,
+            type: 'sos',
+            severity: 'critica',
+            description: `SOS disparado por ${profile.name}`,
+            gps_lat: input.lat,
+            gps_lng: input.lng,
+            status: 'aberta',
+            idempotency_key: input.idempotency_key,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao disparar SOS');
+
+        const occurrence = asOccurrence(data as DbRow);
+
+        const { data: supervisors } = await supabase
+          .from('supervisor_posts')
+          .select('supervisor_id')
+          .eq('post_id', input.post_id);
+
+        for (const supervisor of ((supervisors ?? []) as DbRow[])) {
+          if (!supervisor.supervisor_id) continue;
+
+          await supabase.from('alert_log').insert({
+            company_id: profile.company_id,
+            type: 'sos',
+            target_user_id: supervisor.supervisor_id,
+            post_id: input.post_id,
+            occurrence_id: occurrence.id,
+            payload: {
+              message: `SOS disparado por ${profile.name}`,
+            },
+            channel: 'system',
+            status: 'sent',
+          });
+        }
+
+        return occurrence;
       },
-      close(_occurrenceId: string, _closedBy: string, _resolution: string): Promise<Occurrence> {
-        return failNotImplemented('sos.close será implementado em etapa posterior');
+
+      async close(occurrenceId: string, closedBy: string, _resolution: string): Promise<Occurrence> {
+        const profile = await getCurrentProfile(supabase);
+
+        const { data, error } = await supabase
+          .from('occurrences')
+          .update({
+            status: 'resolvida',
+            resolved_by: closedBy || profile.id,
+            resolved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', occurrenceId)
+          .eq('type', 'sos')
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao encerrar SOS');
+        return asOccurrence(data as DbRow);
       },
+
       async getActive(): Promise<Occurrence[]> {
         const { data, error } = await supabase
           .from('occurrences')

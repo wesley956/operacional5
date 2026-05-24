@@ -6,6 +6,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'r
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/components/Layout';
 import { SuperAdminLayout } from '@/components/SuperAdminLayout';
+import { TrialStatusBanner } from '@/components/TrialStatusBanner';
 import { getPermissions, type PermissionSet } from '@/lib/utils';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -29,6 +30,7 @@ import { SuperAdminDashboardPage } from '@/pages/super-admin/SuperAdminDashboard
 import { SuperAdminCompaniesPage } from '@/pages/super-admin/SuperAdminCompaniesPage';
 import { SuperAdminCompanyDetailPage } from '@/pages/super-admin/SuperAdminCompanyDetailPage';
 import { SuperAdminNewCompanyPage } from '@/pages/super-admin/SuperAdminNewCompanyPage';
+import { SuperAdminTrialsPage } from '@/pages/super-admin/SuperAdminTrialsPage';
 
 function LoadingScreen() {
   return (
@@ -95,6 +97,7 @@ function TenantAppShell() {
 
   return (
     <AppLayout currentPath={location.pathname} onNavigate={navigate}>
+      <TrialStatusBanner />
       <TenantRoutes />
     </AppLayout>
   );
@@ -111,6 +114,7 @@ function SuperAdminRoutes() {
     <Routes>
       <Route path="/super-admin" element={<SuperAdminDashboardPage />} />
       <Route path="/super-admin/companies" element={<SuperAdminCompaniesPage />} />
+      <Route path="/super-admin/trials" element={<SuperAdminTrialsPage />} />
       <Route path="/super-admin/companies/new" element={<SuperAdminNewCompanyPage />} />
       <Route path="/super-admin/companies/:id" element={<SuperAdminCompanyDetailPage />} />
       <Route path="*" element={<Navigate to="/super-admin" replace />} />

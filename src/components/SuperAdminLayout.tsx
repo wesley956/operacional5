@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import {
   Building2,
+  CalendarClock,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -24,6 +25,7 @@ interface SuperAdminNavItem {
 const SUPER_ADMIN_NAV: SuperAdminNavItem[] = [
   { path: '/super-admin', label: 'Dashboard Global', icon: <LayoutDashboard className="w-5 h-5" /> },
   { path: '/super-admin/companies', label: 'Empresas', icon: <Building2 className="w-5 h-5" /> },
+  { path: '/super-admin/trials', label: 'Trials', icon: <CalendarClock className="w-5 h-5" /> },
 ];
 
 function SuperAdminSidebar({ open, onClose, currentPath, onNavigate }: {

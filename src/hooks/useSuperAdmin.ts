@@ -19,6 +19,85 @@ export interface SuperAdminCompany {
   created_at: string;
 }
 
+
+export interface SuperAdminTrial {
+  subscriptionId: string;
+  companyId: string;
+  companyName: string;
+  companyActive: boolean;
+  companySubscriptionStatus?: string | null;
+  status: CompanySubscriptionStatus;
+  trialEndsAt?: string | null;
+  createdAt: string;
+  daysRemaining: number | null;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function getDaysRemaining(dateIso?: string | null): number | null {
+  if (!dateIso) return null;
+  const target = new Date(dateIso);
+  if (Number.isNaN(target.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+
+  return Math.ceil((target.getTime() - today.getTime()) / MS_PER_DAY);
+}
+
+function normalizeTrial(row: Record<string, unknown>): SuperAdminTrial {
+  const nestedCompany = row.companies as Record<string, unknown> | Record<string, unknown>[] | null | undefined;
+  const company = Array.isArray(nestedCompany) ? nestedCompany[0] : nestedCompany;
+  const trialEndsAt = row.trial_ends_at as string | null | undefined;
+
+  return {
+    subscriptionId: String(row.id),
+    companyId: String(row.company_id),
+    companyName: String(company?.name ?? 'Empresa sem nome'),
+    companyActive: company?.active !== false,
+    companySubscriptionStatus: company?.subscription_status as string | null | undefined,
+    status: String(row.status ?? 'trialing') as CompanySubscriptionStatus,
+    trialEndsAt,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    daysRemaining: getDaysRemaining(trialEndsAt),
+  };
+}
+
+export function useSuperAdminTrials() {
+  const [trials, setTrials] = useState<SuperAdminTrial[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error: queryError } = await supabase
+        .from('company_subscriptions')
+        .select('id,company_id,status,trial_ends_at,created_at,companies(id,name,active,subscription_status,created_at)')
+        .in('status', ['trialing', 'expired'])
+        .order('trial_ends_at', { ascending: true, nullsFirst: false });
+
+      if (queryError) throw queryError;
+
+      setTrials((data ?? []).map(row => normalizeTrial(row as Record<string, unknown>)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar trials.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { trials, isLoading, error, refresh };
+}
+
 export interface PlatformStats {
   totalCompanies: number;
   activeCompanies: number;

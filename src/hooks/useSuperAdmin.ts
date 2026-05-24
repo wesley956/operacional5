@@ -114,3 +114,45 @@ export async function updateCompanyStatus(input: {
 
   return data;
 }
+
+export interface CreateCompanyInput {
+  company_name: string;
+  legal_name?: string;
+  document?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  admin_name: string;
+  admin_email: string;
+  plan: 'free_trial' | 'basic' | 'professional' | 'enterprise' | string;
+  trial_days: number;
+  timezone: string;
+  locale: string;
+}
+
+export interface CreateCompanyResult {
+  ok: boolean;
+  company_id: string;
+  company_name: string;
+  admin_email: string;
+  plan: string;
+  trial_ends_at: string;
+  note?: string;
+}
+
+export async function createCompany(input: CreateCompanyInput): Promise<CreateCompanyResult> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.functions.invoke('create-company', {
+    body: input,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data || data.ok === false) {
+    throw new Error(data?.error ?? 'Erro ao criar empresa.');
+  }
+
+  return data as CreateCompanyResult;
+}

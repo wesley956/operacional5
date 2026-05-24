@@ -28,6 +28,7 @@ import { SubscriptionBlockedPage } from '@/pages/SubscriptionBlockedPage';
 import { SuperAdminDashboardPage } from '@/pages/super-admin/SuperAdminDashboardPage';
 import { SuperAdminCompaniesPage } from '@/pages/super-admin/SuperAdminCompaniesPage';
 import { SuperAdminCompanyDetailPage } from '@/pages/super-admin/SuperAdminCompanyDetailPage';
+import { SuperAdminNewCompanyPage } from '@/pages/super-admin/SuperAdminNewCompanyPage';
 
 function LoadingScreen() {
   return (
@@ -110,6 +111,7 @@ function SuperAdminRoutes() {
     <Routes>
       <Route path="/super-admin" element={<SuperAdminDashboardPage />} />
       <Route path="/super-admin/companies" element={<SuperAdminCompaniesPage />} />
+      <Route path="/super-admin/companies/new" element={<SuperAdminNewCompanyPage />} />
       <Route path="/super-admin/companies/:id" element={<SuperAdminCompanyDetailPage />} />
       <Route path="*" element={<Navigate to="/super-admin" replace />} />
     </Routes>

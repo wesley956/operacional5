@@ -34,7 +34,10 @@ export function SuperAdminCompaniesPage() {
           <h1 className="text-2xl font-bold text-gray-900">Empresas</h1>
           <p className="text-sm text-gray-500">Lista global dos tenants do Operacional5.</p>
         </div>
-        <Button variant="secondary" onClick={refresh}>Atualizar</Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => navigate('/super-admin/companies/new')}>Nova empresa</Button>
+          <Button variant="secondary" onClick={refresh}>Atualizar</Button>
+        </div>
       </div>
 
       {error && (

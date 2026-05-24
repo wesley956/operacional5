@@ -28,7 +28,7 @@ CREATE POLICY "logos_company_insert" ON storage.objects FOR INSERT
   WITH CHECK (
     bucket_id = 'logos'
     AND auth.role() = 'authenticated'
-    AND storage.foldername(name)[1] = current_company_id()::text
+    AND (storage.foldername(name))[1] = current_company_id()::text
     AND has_any_role(ARRAY['admin','gerente'])
   );
 
@@ -37,13 +37,13 @@ CREATE POLICY "logos_company_update" ON storage.objects FOR UPDATE
   USING (
     bucket_id = 'logos'
     AND auth.role() = 'authenticated'
-    AND storage.foldername(name)[1] = current_company_id()::text
+    AND (storage.foldername(name))[1] = current_company_id()::text
     AND has_any_role(ARRAY['admin','gerente'])
   )
   WITH CHECK (
     bucket_id = 'logos'
     AND auth.role() = 'authenticated'
-    AND storage.foldername(name)[1] = current_company_id()::text
+    AND (storage.foldername(name))[1] = current_company_id()::text
     AND has_any_role(ARRAY['admin','gerente'])
   );
 
@@ -52,6 +52,6 @@ CREATE POLICY "logos_company_delete" ON storage.objects FOR DELETE
   USING (
     bucket_id = 'logos'
     AND auth.role() = 'authenticated'
-    AND storage.foldername(name)[1] = current_company_id()::text
+    AND (storage.foldername(name))[1] = current_company_id()::text
     AND has_any_role(ARRAY['admin','gerente'])
   );

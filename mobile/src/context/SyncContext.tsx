@@ -1,42 +1,57 @@
 import NetInfo from '@react-native-community/netinfo';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { AppState } from 'react-native';
-import { useAuth } from './AuthContext';
-import { clearSyncedEvents, getQueueStats, syncOfflineQueue, type OfflineQueueStats } from '../services/offline-queue';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import {
+  clearSyncedEvents,
+  getQueueStats,
+  OfflineQueueStats,
+  syncOfflineQueue,
+} from '../services/offline-queue';
 
 interface SyncContextValue {
+  stats: OfflineQueueStats;
   isOnline: boolean;
   syncing: boolean;
-  stats: OfflineQueueStats;
+  isSyncing: boolean;
   lastSyncAt: string | null;
   error: string | null;
   refreshStats: () => Promise<void>;
   syncNow: () => Promise<void>;
 }
 
-const emptyStats: OfflineQueueStats = { pending: 0, syncing: 0, synced: 0, failed: 0 };
-const SyncContext = createContext<SyncContextValue | undefined>(undefined);
+const initialStats: OfflineQueueStats = {
+  pending: 0,
+  syncing: 0,
+  synced: 0,
+  failed: 0,
+};
+
+const SyncContext = createContext<SyncContextValue | null>(null);
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const { session, profile } = useAuth();
+  const [stats, setStats] = useState<OfflineQueueStats>(initialStats);
   const [isOnline, setIsOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [stats, setStats] = useState<OfflineQueueStats>(emptyStats);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshStats = useCallback(async () => {
-    setStats(await getQueueStats());
+    const nextStats = await getQueueStats();
+    setStats(nextStats);
   }, []);
 
   const syncNow = useCallback(async () => {
-    if (!session || !profile || !isOnline || syncing) {
-      await refreshStats().catch(() => undefined);
-      return;
-    }
+    if (syncing) return;
 
     setSyncing(true);
     setError(null);
+
     try {
       await syncOfflineQueue();
       await clearSyncedEvents(7);
@@ -44,51 +59,65 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       await refreshStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      await refreshStats().catch(() => undefined);
     } finally {
       setSyncing(false);
     }
-  }, [isOnline, profile, refreshStats, session, syncing]);
+  }, [refreshStats, syncing]);
 
   useEffect(() => {
+    let mounted = true;
+
+    refreshStats().catch((err) => {
+      if (mounted) setError(err instanceof Error ? err.message : String(err));
+    });
+
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const nextOnline = Boolean(state.isConnected && state.isInternetReachable !== false);
-      setIsOnline(nextOnline);
-      if (nextOnline) void syncNow();
+      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+      if (mounted) setIsOnline(online);
     });
 
-    void refreshStats();
-    return unsubscribe;
-  }, [refreshStats, syncNow]);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [refreshStats]);
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void refreshStats();
-        void syncNow();
-      }
-    });
-    return () => sub.remove();
-  }, [refreshStats, syncNow]);
+    if (!isOnline) return;
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      void refreshStats();
-      void syncNow();
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [refreshStats, syncNow]);
+    const hasPending = stats.pending > 0 || stats.failed > 0;
+    if (!hasPending) return;
 
-  const value = useMemo(
-    () => ({ isOnline, syncing, stats, lastSyncAt, error, refreshStats, syncNow }),
-    [error, isOnline, lastSyncAt, refreshStats, stats, syncNow, syncing]
+    syncNow();
+    // Não coloque stats como dependência aqui, senão o sync cria loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
+
+  const value = useMemo<SyncContextValue>(
+    () => ({
+      stats,
+      isOnline,
+      syncing,
+      isSyncing: syncing,
+      lastSyncAt,
+      error,
+      refreshStats,
+      syncNow,
+    }),
+    [stats, isOnline, syncing, lastSyncAt, error, refreshStats, syncNow]
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }
 
+export function useSync() {
+  const context = useContext(SyncContext);
+  if (!context) {
+    throw new Error('useSync deve ser usado dentro de SyncProvider');
+  }
+  return context;
+}
+
 export function useSyncStatus() {
-  const ctx = useContext(SyncContext);
-  if (!ctx) throw new Error('useSyncStatus precisa ser usado dentro de SyncProvider');
-  return ctx;
+  return useSync();
 }

@@ -33,7 +33,7 @@ export function OperatorHomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [profile, sync]);
+  }, [profile?.id, sync.refreshStats]);
 
   useEffect(() => { void load(); }, [load]);
 

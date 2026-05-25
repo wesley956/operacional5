@@ -42,6 +42,7 @@
       "expo-notifications",
       "expo-asset",
       "expo-sqlite"
-    ]
+    ],
+    "scheme": "operacional5"
   }
 }

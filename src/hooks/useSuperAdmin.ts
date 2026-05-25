@@ -219,6 +219,30 @@ export interface CreateCompanyResult {
   note?: string;
 }
 
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  const fallback = error instanceof Error ? error.message : 'Edge Function retornou erro.';
+
+  const maybeContext = error as { context?: Response };
+  if (!maybeContext.context) return fallback;
+
+  try {
+    const body = await maybeContext.context.clone().json();
+    if (body?.error) return String(body.error);
+    if (body?.message) return String(body.message);
+  } catch {
+    // Ignore JSON parse errors and try text below.
+  }
+
+  try {
+    const text = await maybeContext.context.clone().text();
+    if (text) return text;
+  } catch {
+    // Ignore text parse errors.
+  }
+
+  return fallback;
+}
+
 export async function createCompany(input: CreateCompanyInput): Promise<CreateCompanyResult> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.functions.invoke('create-company', {
@@ -226,7 +250,7 @@ export async function createCompany(input: CreateCompanyInput): Promise<CreateCo
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(await getFunctionErrorMessage(error));
   }
 
   if (!data || data.ok === false) {

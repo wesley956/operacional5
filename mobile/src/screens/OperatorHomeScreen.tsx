@@ -2,14 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useSyncStatus } from '../context/SyncContext';
 import { getTodaySchedules, type MobileSchedule } from '../services/mobile-data';
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatLastSync(value: string | null) {
+  if (!value) return 'Ainda não sincronizou nesta sessão';
+  return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 export function OperatorHomeScreen() {
   const { profile, signOut } = useAuth();
+  const sync = useSyncStatus();
   const [schedules, setSchedules] = useState<MobileSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +27,13 @@ export function OperatorHomeScreen() {
     setLoading(true);
     try {
       setSchedules(await getTodaySchedules(profile.id));
+      await sync.refreshStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [profile, sync]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -33,6 +41,8 @@ export function OperatorHomeScreen() {
     await signOut();
     router.replace('/login');
   }
+
+  const pendingTotal = sync.stats.pending + sync.stats.failed + sync.stats.syncing;
 
   return (
     <ScrollView
@@ -44,6 +54,18 @@ export function OperatorHomeScreen() {
         <Text style={styles.kicker}>Bem-vindo</Text>
         <Text style={styles.title}>{profile?.name ?? 'Operador'}</Text>
         <Text style={styles.role}>{profile?.role?.toUpperCase() ?? 'USUÁRIO'}</Text>
+      </View>
+
+      <View style={[styles.syncCard, sync.isOnline ? styles.onlineCard : styles.offlineCard]}>
+        <View style={styles.syncHeader}>
+          <Text style={styles.syncTitle}>{sync.isOnline ? 'Online' : 'Offline'}</Text>
+          <Text style={styles.syncBadge}>{sync.syncing ? 'Sincronizando...' : `${pendingTotal} pendente(s)`}</Text>
+        </View>
+        <Text style={styles.syncText}>Última sincronização: {formatLastSync(sync.lastSyncAt)}</Text>
+        {sync.error ? <Text style={styles.syncError}>{sync.error}</Text> : null}
+        <Pressable style={styles.syncButton} onPress={() => void sync.syncNow()} disabled={sync.syncing || !sync.isOnline}>
+          <Text style={styles.syncButtonText}>Sincronizar agora</Text>
+        </Pressable>
       </View>
 
       <View style={styles.actions}>
@@ -85,6 +107,16 @@ const styles = StyleSheet.create({
   kicker: { color: '#bfdbfe', fontWeight: '700' },
   title: { color: '#ffffff', fontSize: 24, fontWeight: '900', marginTop: 4 },
   role: { color: '#dbeafe', marginTop: 4, fontWeight: '800' },
+  syncCard: { padding: 16, borderRadius: 18, borderWidth: 1 },
+  onlineCard: { backgroundColor: '#ecfdf5', borderColor: '#86efac' },
+  offlineCard: { backgroundColor: '#fff7ed', borderColor: '#fdba74' },
+  syncHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, alignItems: 'center' },
+  syncTitle: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
+  syncBadge: { fontWeight: '900', color: '#1e40af' },
+  syncText: { color: '#475569', marginTop: 6 },
+  syncError: { color: '#b91c1c', marginTop: 8, fontWeight: '700' },
+  syncButton: { marginTop: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, padding: 10, alignItems: 'center' },
+  syncButtonText: { color: '#0f172a', fontWeight: '900' },
   actions: { gap: 10 },
   actionButton: { borderRadius: 18, padding: 16, alignItems: 'center' },
   primary: { backgroundColor: '#2563eb' },

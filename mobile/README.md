@@ -46,3 +46,20 @@ npm run start
 - Fila offline real com expo-sqlite.
 - Sync engine.
 - Push notifications/device tokens.
+
+## Fase 6B — Offline Queue + Sync
+
+Implementado:
+
+- Fila offline real com `expo-sqlite`.
+- Check-in, SOS e ocorrência podem ser salvos localmente quando o app está offline.
+- Sincronização automática quando a conexão volta.
+- Indicador online/offline na Home do operador.
+- Botão "Sincronizar agora".
+- Edge Function `sync-offline-event` com validação de usuário, empresa e payload sanitizado.
+
+Depois de aplicar esta fase, faça deploy da função:
+
+```bash
+npx supabase functions deploy sync-offline-event --use-api
+```

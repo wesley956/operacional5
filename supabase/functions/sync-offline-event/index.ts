@@ -1,26 +1,15 @@
 // ============================================================
 // OPERACIONAL5 — Edge Function: sync-offline-event
 // Recebe eventos criados offline e processa com idempotência.
-// Segurança: exige Authorization Bearer e valida company_id do caller.
 // ============================================================
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import {
-  handleEdgeError,
-  jsonResponse,
-  optionalString,
-  readJsonObject,
-  requiredEnum,
-  requiredObject,
-  requiredString,
-  ValidationError,
-  type JsonRecord,
-} from '../_shared/validation.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { enforceRateLimit } from '../_shared/rate-limit.ts';
 
-const OFFLINE_EVENT_TYPES = ['presence', 'occurrence', 'sos', 'ronda', 'handover'] as const;
-const ELEVATED_ROLES = ['admin', 'diretor', 'gerente', 'supervisor'] as const;
+type OfflineEventType = 'presence' | 'occurrence' | 'sos' | 'ronda' | 'handover';
+
+const OFFLINE_EVENT_TYPES: OfflineEventType[] = ['presence', 'occurrence', 'sos', 'ronda', 'handover'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,90 +17,128 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type OfflineEventType = typeof OFFLINE_EVENT_TYPES[number];
-
-type CallerProfile = {
-  id: string;
-  company_id: string;
-  role: string;
-  active: boolean;
-};
-
-function withCors(response: Response): Response {
-  const headers = new Headers(response.headers);
-  Object.entries(corsHeaders).forEach(([key, value]) => headers.set(key, value));
-  return new Response(response.body, { status: response.status, headers });
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
+  });
 }
 
-function isElevated(role: string): boolean {
-  return ELEVATED_ROLES.includes(role as typeof ELEVATED_ROLES[number]);
+function requiredString(obj: Record<string, unknown>, key: string) {
+  const value = obj[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Campo obrigatório ausente: ${key}`);
+  }
+  return value;
 }
 
-function stringValue(payload: JsonRecord, key: string): string | undefined {
-  const value = payload[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+function optionalString(obj: Record<string, unknown>, key: string) {
+  const value = obj[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
-function assertPayloadCompany(payload: JsonRecord, callerProfile: CallerProfile): void {
-  const companyId = requiredString(payload, 'company_id');
-
-  if (companyId !== callerProfile.company_id) {
-    throw new ValidationError('Evento pertence a outra empresa.', 403);
+function requiredObject(obj: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = obj[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Campo obrigatório inválido: ${key}`);
   }
+  return value as Record<string, unknown>;
 }
 
-function assertActorIsAllowed(payload: JsonRecord, callerProfile: CallerProfile): void {
-  if (isElevated(callerProfile.role)) return;
-
-  const employeeId = stringValue(payload, 'employee_id');
-  const outgoingEmployeeId = stringValue(payload, 'outgoing_employee_id');
-  const incomingEmployeeId = stringValue(payload, 'incoming_employee_id');
-
-  if (employeeId && employeeId !== callerProfile.id) {
-    throw new ValidationError('Operador só pode sincronizar eventos próprios.', 403);
+function requiredEventType(obj: Record<string, unknown>): OfflineEventType {
+  const value = requiredString(obj, 'type') as OfflineEventType;
+  if (!OFFLINE_EVENT_TYPES.includes(value)) {
+    throw new Error(`Tipo de evento offline inválido: ${value}`);
   }
-
-  if (outgoingEmployeeId && outgoingEmployeeId !== callerProfile.id) {
-    throw new ValidationError('Operador só pode sincronizar passagens próprias.', 403);
-  }
-
-  if (incomingEmployeeId && incomingEmployeeId !== callerProfile.id) {
-    throw new ValidationError('Operador só pode sincronizar passagens próprias.', 403);
-  }
+  return value;
 }
 
-function tableForType(type: OfflineEventType): string {
-  return {
-    presence: 'presences',
-    occurrence: 'occurrences',
-    sos: 'occurrences',
-    ronda: 'ronda_logs',
-    handover: 'shift_handovers',
-  }[type];
+function pickAllowed(payload: Record<string, unknown>, allowed: string[]) {
+  const out: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) out[key] = payload[key];
+  }
+  return out;
 }
 
-function buildInsertPayload(type: OfflineEventType, payload: JsonRecord, idempotencyKey: string, photoUrl?: string): JsonRecord {
-  const now = new Date().toISOString();
-  const insertPayload: JsonRecord = {
-    ...payload,
-    idempotency_key: idempotencyKey,
-  };
-
-  if (photoUrl || payload.photo_url) {
-    insertPayload.photo_url = photoUrl || payload.photo_url;
+function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown>, idempotencyKey: string, photoUrl?: string) {
+  if (type === 'presence') {
+    const insertPayload = pickAllowed(payload, [
+      'schedule_id',
+      'employee_id',
+      'post_id',
+      'confirmed_at',
+      'gps_lat',
+      'gps_lng',
+      'gps_valid',
+      'accuracy',
+      'validation_method',
+      'photo_url',
+      'is_mock_location',
+      'mock_reasons',
+      'status',
+      'offline_created_at',
+      'device_info',
+    ]);
+    insertPayload.idempotency_key = idempotencyKey;
+    insertPayload.synced_at = new Date().toISOString();
+    if (photoUrl) insertPayload.photo_url = photoUrl;
+    return { table: 'presences', insertPayload };
   }
 
-  if (type === 'presence' || type === 'occurrence' || type === 'sos' || type === 'ronda' || type === 'handover') {
-    insertPayload.synced_at = now;
+  if (type === 'occurrence' || type === 'sos') {
+    const insertPayload = pickAllowed(payload, [
+      'company_id',
+      'post_id',
+      'employee_id',
+      'type',
+      'severity',
+      'description',
+      'photo_url',
+      'gps_lat',
+      'gps_lng',
+      'status',
+    ]);
+    insertPayload.type = type === 'sos' ? 'sos' : insertPayload.type;
+    insertPayload.severity = type === 'sos' ? 'critica' : insertPayload.severity;
+    insertPayload.idempotency_key = idempotencyKey;
+    if (photoUrl) insertPayload.photo_url = photoUrl;
+    return { table: 'occurrences', insertPayload };
   }
 
-  if (type === 'sos') {
-    insertPayload.type = 'sos';
-    insertPayload.severity = insertPayload.severity || 'critica';
-    insertPayload.status = insertPayload.status || 'aberta';
+  if (type === 'ronda') {
+    const insertPayload = pickAllowed(payload, [
+      'company_id',
+      'post_id',
+      'employee_id',
+      'ronda_point_id',
+      'gps_lat',
+      'gps_lng',
+      'status',
+      'notes',
+      'photo_url',
+      'created_at',
+    ]);
+    insertPayload.idempotency_key = idempotencyKey;
+    if (photoUrl) insertPayload.photo_url = photoUrl;
+    return { table: 'ronda_logs', insertPayload };
   }
 
-  return insertPayload;
+  const insertPayload = pickAllowed(payload, [
+    'company_id',
+    'post_id',
+    'employee_id',
+    'from_employee_id',
+    'to_employee_id',
+    'notes',
+    'status',
+    'created_at',
+  ]);
+  insertPayload.idempotency_key = idempotencyKey;
+  return { table: 'shift_handovers', insertPayload };
 }
 
 serve(async (req) => {
@@ -126,117 +153,91 @@ serve(async (req) => {
       windowMs: 60000,
     });
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-    if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-      throw new ValidationError('Ambiente Supabase incompleto.', 500);
-    }
-
-    const authHeader = req.headers.get('Authorization');
-
-    if (!authHeader) {
-      throw new ValidationError('Authorization header ausente.', 401);
+    const authHeader = req.headers.get('Authorization') ?? '';
+    if (!authHeader.startsWith('Bearer ')) {
+      return jsonResponse({ success: false, error: 'Authorization header ausente.' }, 401);
     }
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
-      auth: { persistSession: false },
     });
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: userData, error: userError } = await callerClient.auth.getUser();
-
-    if (userError || !userData.user) {
-      throw new ValidationError('Usuário não autenticado.', 401);
+    const { data: authData, error: authError } = await callerClient.auth.getUser();
+    if (authError || !authData.user) {
+      return jsonResponse({ success: false, error: 'Usuário não autenticado.' }, 401);
     }
 
-    const { data: callerProfile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await adminClient
       .from('profiles')
-      .select('id, company_id, role, active')
-      .eq('user_id', userData.user.id)
-      .eq('active', true)
-      .single<CallerProfile>();
+      .select('id,company_id,role,active')
+      .eq('user_id', authData.user.id)
+      .maybeSingle();
 
-    if (profileError || !callerProfile) {
-      throw new ValidationError('Perfil do usuário autenticado não encontrado.', 403);
+    if (profileError || !profile || !profile.active) {
+      return jsonResponse({ success: false, error: 'Perfil inválido ou inativo.' }, 403);
     }
 
-    const body = await readJsonObject(req);
-    const type = requiredEnum(body, 'type', OFFLINE_EVENT_TYPES);
+    const body = await req.json() as Record<string, unknown>;
+    const type = requiredEventType(body);
     const idempotencyKey = requiredString(body, 'idempotency_key');
     const payload = requiredObject(body, 'payload');
     const photoUrl = optionalString(body, 'photo_url');
+    const companyId = requiredString(payload, 'company_id');
 
-    assertPayloadCompany(payload, callerProfile);
-    assertActorIsAllowed(payload, callerProfile);
-
-    const postId = stringValue(payload, 'post_id');
-
-    if (postId) {
-      const { data: post, error: postError } = await supabase
-        .from('posts')
-        .select('id')
-        .eq('id', postId)
-        .eq('company_id', callerProfile.company_id)
-        .maybeSingle();
-
-      if (postError || !post) {
-        throw new ValidationError('Posto não encontrado nesta empresa.', 403);
-      }
+    if (companyId !== profile.company_id) {
+      return jsonResponse({ success: false, error: 'Evento offline pertence a outra empresa.' }, 403);
     }
 
-    const table = tableForType(type);
+    const employeeId = optionalString(payload, 'employee_id');
+    const elevatedRoles = ['supervisor', 'gerente', 'diretor', 'admin'];
+    if (employeeId && employeeId !== profile.id && !elevatedRoles.includes(String(profile.role))) {
+      return jsonResponse({ success: false, error: 'Usuário não pode sincronizar evento de outro colaborador.' }, 403);
+    }
 
-    const { data: existing } = await supabase
+    const { table, insertPayload } = sanitizePayload(type, payload, idempotencyKey, photoUrl);
+
+    const { data: existing } = await adminClient
       .from(table)
       .select('id')
       .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
 
     if (existing) {
-      return withCors(jsonResponse({
-        success: true,
-        message: 'Event already synced (idempotent)',
-        id: existing.id,
-      }));
+      return jsonResponse({ success: true, message: 'Evento já sincronizado.', id: existing.id, type });
     }
 
-    const insertPayload = buildInsertPayload(type, payload, idempotencyKey, photoUrl);
-    delete insertPayload.offline_created_at;
-
-    const { data, error } = await supabase
+    const { data, error } = await adminClient
       .from(table)
       .insert(insertPayload)
       .select('id')
       .single();
 
     if (error) {
-      return withCors(jsonResponse({ success: false, error: error.message }, 500));
+      return jsonResponse({ success: false, error: error.message }, 500);
     }
 
     if (type === 'sos') {
-      const sosPostId = requiredString(payload, 'post_id');
+      const postId = requiredString(payload, 'post_id');
 
-      const { data: supervisors } = await supabase
+      const { data: supervisors } = await adminClient
         .from('supervisor_posts')
-        .select('supervisor_id, posts!inner(company_id)')
-        .eq('post_id', sosPostId)
-        .eq('posts.company_id', callerProfile.company_id);
+        .select('supervisor_id')
+        .eq('post_id', postId);
 
       if (supervisors) {
         for (const sp of supervisors) {
-          await supabase.from('alert_log').insert({
-            company_id: callerProfile.company_id,
+          await adminClient.from('alert_log').insert({
+            company_id: companyId,
             type: 'sos',
             target_user_id: sp.supervisor_id,
-            post_id: sosPostId,
+            post_id: postId,
             occurrence_id: data.id,
-            payload: { message: 'SOS disparado (sync offline)' },
+            payload: { message: 'SOS disparado pelo app mobile offline' },
             channel: 'system',
             status: 'sent',
           });
@@ -244,21 +245,18 @@ serve(async (req) => {
       }
     }
 
-    await supabase.from('audit_logs').insert({
-      company_id: callerProfile.company_id,
-      actor_id: callerProfile.id,
+    await adminClient.from('audit_logs').insert({
+      company_id: companyId,
+      actor_id: profile.id,
       action: `offline_sync_${type}`,
       entity: table,
       entity_id: data.id,
       metadata: { idempotency_key: idempotencyKey, offline: true },
     });
 
-    return withCors(jsonResponse({
-      success: true,
-      id: data.id,
-      type,
-    }));
+    return jsonResponse({ success: true, id: data.id, type });
   } catch (error) {
-    return withCors(handleEdgeError(error));
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ success: false, error: message }, 400);
   }
 });

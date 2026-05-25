@@ -13,6 +13,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
     "@opentelemetry/api": "^1.9.1",
+    "@react-native-community/netinfo": "11.4.1",
     "@supabase/supabase-js": "^2.45.0",
     "date-fns": "^4.2.1",
     "expo": "~52.0.0",

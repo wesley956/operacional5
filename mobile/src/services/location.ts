@@ -1,11 +1,4 @@
-// ============================================================
-// OPERACIONAL5 Mobile — Location Service
-// ============================================================
-
-/**
- * Em produção: usa expo-location para GPS real.
- * Esta é a interface que as screens usam.
- */
+import * as Location from 'expo-location';
 
 export interface LocationResult {
   lat: number;
@@ -17,10 +10,6 @@ export interface LocationResult {
   timestamp: number;
 }
 
-/**
- * Haversine distance entre dois pontos GPS.
- * Usado no mobile para validação offline.
- */
 export function haversineDistance(
   lat1: number, lng1: number,
   lat2: number, lng2: number
@@ -35,9 +24,6 @@ export function haversineDistance(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Verifica se o operador está dentro do raio do posto.
- */
 export function isWithinGeofence(
   lat: number, lng: number,
   postLat: number, postLng: number,
@@ -46,9 +32,6 @@ export function isWithinGeofence(
   return haversineDistance(lat, lng, postLat, postLng) <= radiusMeters;
 }
 
-/**
- * Detecção básica de mock location.
- */
 export function detectMock(accuracy: number, speed: number | null, altitude: number | null): boolean {
   const reasons: string[] = [];
   if (accuracy > 150) reasons.push('Acurácia muito baixa');
@@ -56,4 +39,30 @@ export function detectMock(accuracy: number, speed: number | null, altitude: num
   if (speed === 0 && accuracy < 5) reasons.push('Velocidade zero perfeita');
   if (altitude === 0) reasons.push('Altitude zero');
   return reasons.length >= 2;
+}
+
+export async function getCurrentLocation(): Promise<LocationResult> {
+  const foreground = await Location.requestForegroundPermissionsAsync();
+  if (foreground.status !== 'granted') {
+    throw new Error('Permissão de localização negada. Ative o GPS para usar o app.');
+  }
+
+  const position = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.High,
+  });
+
+  const mocked = Boolean((position as { mocked?: boolean }).mocked);
+  const accuracy = position.coords.accuracy ?? 999;
+  const speed = position.coords.speed ?? null;
+  const altitude = position.coords.altitude ?? null;
+
+  return {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    accuracy,
+    speed,
+    altitude,
+    isMock: mocked || detectMock(accuracy, speed, altitude),
+    timestamp: position.timestamp,
+  };
 }

@@ -1,10 +1,2 @@
-import React from 'react';
 import { View, Text } from 'react-native';
-
-export function QRScanScreen() {
-  return (
-    <View>
-      <Text>Leitura de QR Code</Text>
-    </View>
-  );
-}
+export function QRScanScreen() { return <View><Text>QR Scanner — próxima fase</Text></View>; }

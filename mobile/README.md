@@ -110,3 +110,20 @@ Fluxo recomendado de teste:
 3. Acessar Histórico.
 4. Registrar passagem de plantão.
 5. Testar passagem offline e sincronização posterior.
+
+## Fase 7 — Push notifications
+
+Implementado nesta fase:
+
+- Registro de Expo Push Token no app mobile.
+- Armazenamento em `device_tokens`.
+- Tela de perfil mostra status de notificações.
+- Edge Function `send-alert` envia notificações via Expo Push API.
+- Logs em `notification_logs`.
+- SOS online tenta notificar supervisores, gerentes e admins da empresa.
+
+Observações importantes:
+
+- No Android, push remoto não funciona no Expo Go moderno. Para testar push remoto, use Development Build/EAS.
+- O app não quebra no Expo Go: se o token não puder ser gerado, a tela de perfil mostra o motivo.
+- Para enhanced security do Expo Push Service, configure `EXPO_ACCESS_TOKEN` nos Supabase Secrets.

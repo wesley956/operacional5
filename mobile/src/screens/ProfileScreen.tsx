@@ -1,9 +1,11 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { usePushNotifications } from '../context/NotificationsContext';
 
 export function ProfileScreen() {
   const { profile, signOut } = useAuth();
+  const push = usePushNotifications();
 
   async function handleSignOut() {
     await signOut();
@@ -31,6 +33,19 @@ export function ProfileScreen() {
         <Text style={styles.value}>{profile?.active ? 'Ativo' : 'Inativo'}</Text>
       </View>
 
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Notificações</Text>
+        <Text style={styles.value}>Status: {push.status}</Text>
+        {push.message ? <Text style={styles.help}>{push.message}</Text> : null}
+        {push.token ? <Text style={styles.token}>Token registrado: {push.token.slice(0, 22)}...</Text> : null}
+
+        <Pressable style={styles.primaryButton} onPress={push.registerNow} disabled={push.registering}>
+          <Text style={styles.primaryButtonText}>
+            {push.registering ? 'Registrando...' : 'Registrar notificações'}
+          </Text>
+        </Pressable>
+      </View>
+
       <Pressable style={styles.primaryButton} onPress={() => router.push('/history')}>
         <Text style={styles.primaryButtonText}>Ver histórico</Text>
       </Pressable>
@@ -53,8 +68,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', color: '#0f172a' },
   subtitle: { color: '#64748b' },
   card: { backgroundColor: '#ffffff', borderRadius: 18, padding: 16, gap: 8, borderWidth: 1, borderColor: '#e2e8f0' },
+  cardTitle: { color: '#0f172a', fontSize: 16, fontWeight: '800' },
   label: { color: '#64748b', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   value: { color: '#0f172a', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  help: { color: '#475569', lineHeight: 20 },
+  token: { color: '#64748b', fontSize: 12 },
   primaryButton: { backgroundColor: '#1e40af', borderRadius: 14, padding: 15, alignItems: 'center' },
   primaryButtonText: { color: '#ffffff', fontWeight: '800' },
   secondaryButton: { borderWidth: 1, borderColor: '#1e40af', borderRadius: 14, padding: 15, alignItems: 'center' },

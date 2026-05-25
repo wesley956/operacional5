@@ -32,7 +32,8 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "VIBRATE",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [

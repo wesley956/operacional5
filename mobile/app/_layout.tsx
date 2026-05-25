@@ -2,11 +2,13 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '../src/context/AuthContext';
 import { SyncProvider } from '../src/context/SyncContext';
+import { NotificationsProvider } from '../src/context/NotificationsContext';
 
 export default function RootLayout() {
   return (
     <AuthProvider>
       <SyncProvider>
+        <NotificationsProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -23,6 +25,7 @@ export default function RootLayout() {
           <Stack.Screen name="sos" options={{ title: 'SOS' }} />
           <Stack.Screen name="occurrence" options={{ title: 'Ocorrência' }} />
         </Stack>
+              </NotificationsProvider>
       </SyncProvider>
     </AuthProvider>
   );

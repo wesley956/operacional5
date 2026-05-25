@@ -465,3 +465,31 @@ export async function getRecentMobileHistory(profile: MobileProfile): Promise<Mo
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 20);
 }
+
+
+async function notifySosReceivers(params: {
+  profile: MobileProfile;
+  occurrenceId?: string | null;
+  postId?: string | null;
+  description: string;
+}) {
+  try {
+    await supabase.functions.invoke('send-alert', {
+      body: {
+        company_id: params.profile.company_id,
+        roles: ['supervisor', 'gerente', 'admin'],
+        title: '🚨 SOS Operacional5',
+        body: `${params.profile.name} acionou SOS${params.postId ? ' em um posto' : ''}.`,
+        data: {
+          type: 'sos',
+          occurrence_id: params.occurrenceId ?? null,
+          post_id: params.postId ?? null,
+          description: params.description,
+        },
+      },
+    });
+  } catch (err) {
+    console.warn('Falha ao enviar push SOS', err);
+  }
+}
+

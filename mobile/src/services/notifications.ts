@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
@@ -23,14 +22,33 @@ export interface PushProfile {
   company_id: string;
 }
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+type ExpoNotificationsModule = typeof import('expo-notifications');
+
+function isExpoGoAndroid() {
+  return Platform.OS === 'android' && Constants.appOwnership === 'expo';
+}
+
+async function loadNotifications(): Promise<ExpoNotificationsModule | null> {
+  if (Platform.OS === 'web') return null;
+  if (isExpoGoAndroid()) return null;
+
+  try {
+    const Notifications = await import('expo-notifications');
+
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+
+    return Notifications;
+  } catch {
+    return null;
+  }
+}
 
 function getExpoProjectId() {
   return (
@@ -54,10 +72,26 @@ export async function registerForPushNotifications(profile: PushProfile): Promis
     };
   }
 
+  if (isExpoGoAndroid()) {
+    return {
+      status: 'unsupported',
+      message: 'Push remoto no Android não funciona no Expo Go. Use Development Build/EAS para testar notificações reais.',
+    };
+  }
+
   if (!Device.isDevice) {
     return {
       status: 'unsupported',
       message: 'Push remoto exige aparelho físico.',
+    };
+  }
+
+  const Notifications = await loadNotifications();
+
+  if (!Notifications) {
+    return {
+      status: 'unsupported',
+      message: 'Módulo de notificações indisponível neste ambiente.',
     };
   }
 
@@ -131,19 +165,27 @@ export async function registerForPushNotifications(profile: PushProfile): Promis
 }
 
 export function addNotificationListeners(params?: {
-  onReceive?: (notification: Notifications.Notification) => void;
-  onResponse?: (response: Notifications.NotificationResponse) => void;
+  onReceive?: (notification: unknown) => void;
+  onResponse?: (response: unknown) => void;
 }) {
-  const received = Notifications.addNotificationReceivedListener((notification) => {
-    params?.onReceive?.(notification);
+  let unsubscribe = () => {};
+
+  void loadNotifications().then((Notifications) => {
+    if (!Notifications) return;
+
+    const received = Notifications.addNotificationReceivedListener((notification) => {
+      params?.onReceive?.(notification);
+    });
+
+    const responded = Notifications.addNotificationResponseReceivedListener((response) => {
+      params?.onResponse?.(response);
+    });
+
+    unsubscribe = () => {
+      received.remove();
+      responded.remove();
+    };
   });
 
-  const responded = Notifications.addNotificationResponseReceivedListener((response) => {
-    params?.onResponse?.(response);
-  });
-
-  return () => {
-    received.remove();
-    responded.remove();
-  };
+  return () => unsubscribe();
 }

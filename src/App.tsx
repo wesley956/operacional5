@@ -31,6 +31,7 @@ import { SuperAdminCompaniesPage } from '@/pages/super-admin/SuperAdminCompanies
 import { SuperAdminCompanyDetailPage } from '@/pages/super-admin/SuperAdminCompanyDetailPage';
 import { SuperAdminNewCompanyPage } from '@/pages/super-admin/SuperAdminNewCompanyPage';
 import { SuperAdminTrialsPage } from '@/pages/super-admin/SuperAdminTrialsPage';
+import AlertsCenterPage from './pages/AlertsCenterPage';
 
 function LoadingScreen() {
   return (
@@ -87,7 +88,8 @@ function TenantRoutes() {
       <Route path="/settings" element={<TenantGuard permission={p => p.canManageSettings}><SettingsPage /></TenantGuard>} />
       <Route path="/admin" element={<TenantGuard permission={p => p.canAccessAdmin}><AdminPage /></TenantGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+            <Route path="/alerts" element={<AlertsCenterPage />} />
+      </Routes>
   );
 }
 

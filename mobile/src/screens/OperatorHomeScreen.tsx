@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../context/SyncContext';
 import { getTodaySchedules, type MobileSchedule } from '../services/mobile-data';
+import { FieldSideMenu } from '../components/FieldSideMenu';
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -17,6 +18,7 @@ function formatLastSync(value: string | null) {
 export function OperatorHomeScreen() {
   const { profile, signOut } = useAuth();
   const sync = useSyncStatus();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [schedules, setSchedules] = useState<MobileSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +52,15 @@ export function OperatorHomeScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
+      <FieldSideMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
+
+      <View style={styles.topBar}>
+        <Pressable style={styles.menuButton} onPress={() => setMenuOpen(true)}>
+          <Text style={styles.menuButtonText}>☰ Menu</Text>
+        </Pressable>
+        <Text style={styles.topBarText}>Operação de campo</Text>
+      </View>
+
       <View style={styles.headerCard}>
         <Text style={styles.kicker}>Bem-vindo</Text>
         <Text style={styles.title}>{profile?.name ?? 'Operador'}</Text>
@@ -122,9 +133,13 @@ export function OperatorHomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  topBarText: { color: '#64748b', fontWeight: '800' },
+  menuButton: { backgroundColor: '#1e40af', borderRadius: 14, paddingVertical: 11, paddingHorizontal: 16 },
+  menuButtonText: { color: '#ffffff', fontWeight: '900' },
   secondaryButton: { borderWidth: 1, borderColor: '#1e40af', borderRadius: 14, padding: 14, alignItems: 'center', backgroundColor: '#ffffff' },
   secondaryButtonText: { color: '#1e40af', fontWeight: '800' },
-  quickActions: { gap: 10 },
+  quickActions: { display: 'none' },
   page: { flex: 1, backgroundColor: '#f1f5f9' },
   content: { padding: 16, gap: 16 },
   headerCard: { backgroundColor: '#0f172a', borderRadius: 24, padding: 20 },

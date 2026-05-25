@@ -1,15 +1,6 @@
-// ============================================================
-// OPERACIONAL5 — Edge Function: sync-offline-event
-// Recebe eventos criados offline e processa com idempotência.
-// ============================================================
-
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { enforceRateLimit } from '../_shared/rate-limit.ts';
-
-type OfflineEventType = 'presence' | 'occurrence' | 'sos' | 'ronda' | 'handover';
-
-const OFFLINE_EVENT_TYPES: OfflineEventType[] = ['presence', 'occurrence', 'sos', 'ronda', 'handover'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,54 +8,42 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
+type OfflineEventType = 'presence' | 'occurrence' | 'sos' | 'ronda' | 'handover';
+
+const OFFLINE_EVENT_TYPES: OfflineEventType[] = ['presence', 'occurrence', 'sos', 'ronda', 'handover'];
+
+function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-    },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-}
-
-function requiredString(obj: Record<string, unknown>, key: string) {
-  const value = obj[key];
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`Campo obrigatório ausente: ${key}`);
-  }
-  return value;
-}
-
-function optionalString(obj: Record<string, unknown>, key: string) {
-  const value = obj[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
-}
-
-function requiredObject(obj: Record<string, unknown>, key: string): Record<string, unknown> {
-  const value = obj[key];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`Campo obrigatório inválido: ${key}`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requiredEventType(obj: Record<string, unknown>): OfflineEventType {
-  const value = requiredString(obj, 'type') as OfflineEventType;
-  if (!OFFLINE_EVENT_TYPES.includes(value)) {
-    throw new Error(`Tipo de evento offline inválido: ${value}`);
-  }
-  return value;
 }
 
 function pickAllowed(payload: Record<string, unknown>, allowed: string[]) {
   const out: Record<string, unknown> = {};
   for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(payload, key)) out[key] = payload[key];
+    const value = payload[key];
+    if (value !== undefined) out[key] = value;
   }
   return out;
 }
 
-function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown>, idempotencyKey: string, photoUrl?: string) {
+function requireString(value: unknown, field: string) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Campo obrigatório ausente: ${field}`);
+  }
+  return value.trim();
+}
+
+function sanitizeEventPayload(params: {
+  type: OfflineEventType;
+  idempotencyKey: string;
+  payload: Record<string, unknown>;
+  callerProfile: { id: string; company_id: string };
+  photoUrl?: string | null;
+}) {
+  const { type, idempotencyKey, payload, callerProfile, photoUrl } = params;
+
   if (type === 'presence') {
     const insertPayload = pickAllowed(payload, [
       'schedule_id',
@@ -83,9 +62,12 @@ function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown
       'offline_created_at',
       'device_info',
     ]);
+
+    insertPayload.employee_id = callerProfile.id;
     insertPayload.idempotency_key = idempotencyKey;
     insertPayload.synced_at = new Date().toISOString();
     if (photoUrl) insertPayload.photo_url = photoUrl;
+
     return { table: 'presences', insertPayload };
   }
 
@@ -102,10 +84,15 @@ function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown
       'gps_lng',
       'status',
     ]);
-    insertPayload.type = type === 'sos' ? 'sos' : insertPayload.type;
-    insertPayload.severity = type === 'sos' ? 'critica' : insertPayload.severity;
+
+    insertPayload.company_id = callerProfile.company_id;
+    insertPayload.employee_id = callerProfile.id;
+    insertPayload.type = type === 'sos' ? 'sos' : insertPayload.type ?? 'outro';
+    insertPayload.severity = type === 'sos' ? 'critica' : insertPayload.severity ?? 'media';
+    insertPayload.status = insertPayload.status ?? 'aberta';
     insertPayload.idempotency_key = idempotencyKey;
     if (photoUrl) insertPayload.photo_url = photoUrl;
+
     return { table: 'occurrences', insertPayload };
   }
 
@@ -120,24 +107,33 @@ function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown
       'notes',
       'photo_url',
       'confirmed_at',
-      'created_at',
     ]);
+
+    insertPayload.employee_id = callerProfile.id;
+    insertPayload.status = insertPayload.status ?? 'concluida';
+    insertPayload.confirmed_at = insertPayload.confirmed_at ?? new Date().toISOString();
     insertPayload.idempotency_key = idempotencyKey;
     if (photoUrl) insertPayload.photo_url = photoUrl;
+
     return { table: 'ronda_logs', insertPayload };
   }
 
   const insertPayload = pickAllowed(payload, [
-    'company_id',
     'post_id',
-    'employee_id',
-    'from_employee_id',
-    'to_employee_id',
-    'notes',
+    'outgoing_employee_id',
+    'incoming_employee_id',
     'status',
-    'created_at',
+    'notes',
+    'pending_items',
+    'retention_reason',
+    'confirmed_at',
   ]);
+
+  insertPayload.outgoing_employee_id = callerProfile.id;
+  insertPayload.status = insertPayload.status ?? 'confirmada';
+  insertPayload.confirmed_at = insertPayload.confirmed_at ?? new Date().toISOString();
   insertPayload.idempotency_key = idempotencyKey;
+
   return { table: 'shift_handovers', insertPayload };
 }
 
@@ -146,10 +142,14 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  if (req.method !== 'POST') {
+    return json({ success: false, error: 'Método não permitido.' }, 405);
+  }
+
   try {
     enforceRateLimit(req, {
       keyPrefix: 'sync-offline-event',
-      maxRequests: 60,
+      maxRequests: 80,
       windowMs: 60000,
     });
 
@@ -157,106 +157,77 @@ serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-    const authHeader = req.headers.get('Authorization') ?? '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return jsonResponse({ success: false, error: 'Authorization header ausente.' }, 401);
+    if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+      return json({ success: false, error: 'Configuração Supabase ausente.' }, 500);
+    }
+
+    const authorization = req.headers.get('Authorization');
+    if (!authorization) {
+      return json({ success: false, error: 'Authorization header obrigatório.' }, 401);
     }
 
     const callerClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: { headers: { Authorization: authorization } },
     });
+
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: authData, error: authError } = await callerClient.auth.getUser();
-    if (authError || !authData.user) {
-      return jsonResponse({ success: false, error: 'Usuário não autenticado.' }, 401);
+    const { data: userData, error: userError } = await callerClient.auth.getUser();
+    if (userError || !userData.user) {
+      return json({ success: false, error: 'Token inválido ou expirado.' }, 401);
     }
 
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
-      .select('id,company_id,role,active')
-      .eq('user_id', authData.user.id)
+      .select('id, company_id, active, role')
+      .eq('user_id', userData.user.id)
       .maybeSingle();
 
-    if (profileError || !profile || !profile.active) {
-      return jsonResponse({ success: false, error: 'Perfil inválido ou inativo.' }, 403);
+    if (profileError) throw profileError;
+
+    if (!profile || !profile.active) {
+      return json({ success: false, error: 'Perfil do usuário não encontrado ou inativo.' }, 403);
     }
 
-    const body = await req.json() as Record<string, unknown>;
-    const type = requiredEventType(body);
-    const idempotencyKey = requiredString(body, 'idempotency_key');
-    const payload = requiredObject(body, 'payload');
-    const photoUrl = optionalString(body, 'photo_url');
-    const companyId = requiredString(payload, 'company_id');
+    const body = await req.json();
+    const type = requireString(body.type, 'type') as OfflineEventType;
+    const idempotencyKey = requireString(body.idempotency_key, 'idempotency_key');
+    const payload = (body.payload ?? {}) as Record<string, unknown>;
+    const photoUrl = typeof body.photo_url === 'string' ? body.photo_url : null;
 
-    if (companyId !== profile.company_id) {
-      return jsonResponse({ success: false, error: 'Evento offline pertence a outra empresa.' }, 403);
+    if (!OFFLINE_EVENT_TYPES.includes(type)) {
+      return json({ success: false, error: `Tipo de evento offline inválido: ${type}` }, 400);
     }
 
-    const employeeId = optionalString(payload, 'employee_id');
-    const elevatedRoles = ['supervisor', 'gerente', 'diretor', 'admin'];
-    if (employeeId && employeeId !== profile.id && !elevatedRoles.includes(String(profile.role))) {
-      return jsonResponse({ success: false, error: 'Usuário não pode sincronizar evento de outro colaborador.' }, 403);
-    }
-
-    const { table, insertPayload } = sanitizePayload(type, payload, idempotencyKey, photoUrl);
-
-    const { data: existing } = await adminClient
-      .from(table)
-      .select('id')
-      .eq('idempotency_key', idempotencyKey)
-      .maybeSingle();
-
-    if (existing) {
-      return jsonResponse({ success: true, message: 'Evento já sincronizado.', id: existing.id, type });
-    }
+    const { table, insertPayload } = sanitizeEventPayload({
+      type,
+      idempotencyKey,
+      payload,
+      callerProfile: {
+        id: String(profile.id),
+        company_id: String(profile.company_id),
+      },
+      photoUrl,
+    });
 
     const { data, error } = await adminClient
       .from(table)
-      .insert(insertPayload)
+      .upsert(insertPayload, { onConflict: 'idempotency_key', ignoreDuplicates: false })
       .select('id')
       .single();
 
-    if (error) {
-      return jsonResponse({ success: false, error: error.message }, 500);
-    }
+    if (error) throw error;
 
-    if (type === 'sos') {
-      const postId = requiredString(payload, 'post_id');
-
-      const { data: supervisors } = await adminClient
-        .from('supervisor_posts')
-        .select('supervisor_id')
-        .eq('post_id', postId);
-
-      if (supervisors) {
-        for (const sp of supervisors) {
-          await adminClient.from('alert_log').insert({
-            company_id: companyId,
-            type: 'sos',
-            target_user_id: sp.supervisor_id,
-            post_id: postId,
-            occurrence_id: data.id,
-            payload: { message: 'SOS disparado pelo app mobile offline' },
-            channel: 'system',
-            status: 'sent',
-          });
-        }
-      }
-    }
-
-    await adminClient.from('audit_logs').insert({
-      company_id: companyId,
-      actor_id: profile.id,
-      action: `offline_sync_${type}`,
-      entity: table,
-      entity_id: data.id,
-      metadata: { idempotency_key: idempotencyKey, offline: true },
+    return json({
+      success: true,
+      table,
+      id: data?.id,
+      idempotency_key: idempotencyKey,
     });
-
-    return jsonResponse({ success: true, id: data.id, type });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return jsonResponse({ success: false, error: message }, 400);
+  } catch (err) {
+    return json({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, 500);
   }
 });

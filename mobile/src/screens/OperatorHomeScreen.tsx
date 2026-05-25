@@ -88,6 +88,19 @@ export function OperatorHomeScreen() {
 
       <Text style={styles.sectionTitle}>Escala de hoje</Text>
       {loading ? <ActivityIndicator color="#1e40af" /> : null}
+      
+      <View style={styles.quickActions}>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/handover')}>
+          <Text style={styles.secondaryButtonText}>Passagem de plantão</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/history')}>
+          <Text style={styles.secondaryButtonText}>Histórico</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/profile')}>
+          <Text style={styles.secondaryButtonText}>Perfil</Text>
+        </Pressable>
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {!loading && schedules.length === 0 ? <Text style={styles.empty}>Nenhuma escala encontrada para hoje.</Text> : null}
 
@@ -109,6 +122,9 @@ export function OperatorHomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  secondaryButton: { borderWidth: 1, borderColor: '#1e40af', borderRadius: 14, padding: 14, alignItems: 'center', backgroundColor: '#ffffff' },
+  secondaryButtonText: { color: '#1e40af', fontWeight: '800' },
+  quickActions: { gap: 10 },
   page: { flex: 1, backgroundColor: '#f1f5f9' },
   content: { padding: 16, gap: 16 },
   headerCard: { backgroundColor: '#0f172a', borderRadius: 24, padding: 20 },

@@ -4,6 +4,12 @@ import { supabase } from '../services/supabase';
 
 export type MobileRole = 'operador' | 'lider' | 'supervisor' | 'gerente' | 'diretor' | 'admin';
 
+export const MOBILE_ALLOWED_ROLES: MobileRole[] = ['operador', 'lider', 'supervisor'];
+
+export function isMobileFieldRole(role: MobileRole) {
+  return MOBILE_ALLOWED_ROLES.includes(role);
+}
+
 export interface MobileProfile {
   id: string;
   user_id: string;
@@ -106,6 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (!currentProfile.active) {
           throw new Error('Perfil inativo. Fale com o administrador da empresa.');
+        }
+        if (!isMobileFieldRole(currentProfile.role)) {
+          await supabase.auth.signOut();
+          setSession(null);
+          setProfile(null);
+          throw new Error('Este aplicativo mobile é para operação de campo. Use o painel web para funções administrativas.');
         }
         setProfile(currentProfile);
       }

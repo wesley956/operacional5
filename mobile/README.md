@@ -90,3 +90,23 @@ Depois, na raiz:
 npm run verify
 npx supabase functions deploy sync-offline-event --use-api
 ```
+
+## Fase 6D — Polimento operacional de campo
+
+Adicionado nesta fase:
+
+- Tela de perfil do usuário logado
+- Tela de histórico operacional
+- Visualização de fila offline pendente
+- Tela real de passagem de plantão
+- Passagem de plantão com fallback offline
+- Idempotência em `shift_handovers`
+- Bloqueio básico para impedir uso administrativo no app mobile
+
+Fluxo recomendado de teste:
+
+1. Login como operador, líder ou supervisor.
+2. Acessar Perfil.
+3. Acessar Histórico.
+4. Registrar passagem de plantão.
+5. Testar passagem offline e sincronização posterior.

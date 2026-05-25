@@ -303,3 +303,165 @@ export async function confirmRondaPoint(params: {
     throw err;
   }
 }
+
+export interface MobileEmployeeOption {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string;
+  active: boolean;
+}
+
+export interface MobileHistoryEvent {
+  id: string;
+  title: string;
+  description: string;
+  created_at: string;
+  kind: 'presence' | 'occurrence' | 'ronda' | 'handover';
+  status: string;
+}
+
+export async function getCompanyEmployees(profile: MobileProfile): Promise<MobileEmployeeOption[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,name,email,role,active')
+    .eq('company_id', profile.company_id)
+    .eq('active', true)
+    .in('role', ['operador', 'lider', 'supervisor'])
+    .neq('id', profile.id)
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as MobileEmployeeOption[];
+}
+
+export async function createShiftHandover(params: {
+  profile: MobileProfile;
+  schedule: MobileSchedule;
+  incomingEmployeeId: string;
+  notes: string;
+  pendingItems: string[];
+  retentionReason?: string | null;
+}): Promise<MobileMutationResult> {
+  const createdAt = new Date().toISOString();
+  const idempotencyKey = `handover:${params.profile.id}:${params.schedule.id}:${Date.now()}`;
+
+  const payload = {
+    post_id: params.schedule.post.id,
+    outgoing_employee_id: params.profile.id,
+    incoming_employee_id: params.incomingEmployeeId,
+    status: params.retentionReason ? 'retido' : 'confirmada',
+    notes: params.notes || null,
+    pending_items: params.pendingItems,
+    retention_reason: params.retentionReason || null,
+    confirmed_at: createdAt,
+    idempotency_key: idempotencyKey,
+  };
+
+  if (!(await isProbablyOnline())) {
+    return queueEvent({ type: 'handover', idempotencyKey, payload });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('shift_handovers')
+      .insert(payload)
+      .select('id,status,confirmed_at')
+      .single();
+
+    if (error) throw error;
+    return data as MobileMutationResult;
+  } catch (err) {
+    if (shouldQueueAfterError(err)) {
+      return queueEvent({ type: 'handover', idempotencyKey, payload });
+    }
+    throw err;
+  }
+}
+
+export async function getRecentMobileHistory(profile: MobileProfile): Promise<MobileHistoryEvent[]> {
+  const [occurrencesResult, presencesResult, rondaResult, handoverResult] = await Promise.allSettled([
+    supabase
+      .from('occurrences')
+      .select('id,type,severity,status,created_at,description')
+      .eq('employee_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('presences')
+      .select('id,status,created_at,confirmed_at,validation_method')
+      .eq('employee_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('ronda_logs')
+      .select('id,status,created_at,confirmed_at,notes')
+      .eq('employee_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('shift_handovers')
+      .select('id,status,created_at,confirmed_at,notes')
+      .or(`outgoing_employee_id.eq.${profile.id},incoming_employee_id.eq.${profile.id}`)
+      .order('created_at', { ascending: false })
+      .limit(8),
+  ]);
+
+  const events: MobileHistoryEvent[] = [];
+
+  if (occurrencesResult.status === 'fulfilled' && !occurrencesResult.value.error) {
+    for (const item of occurrencesResult.value.data ?? []) {
+      events.push({
+        id: String(item.id),
+        kind: 'occurrence',
+        title: item.type === 'sos' ? 'SOS enviado' : `Ocorrência: ${item.type}`,
+        description: `${item.severity ?? 'sem severidade'} · ${item.description ?? 'sem descrição'}`,
+        status: String(item.status ?? 'aberta'),
+        created_at: String(item.created_at),
+      });
+    }
+  }
+
+  if (presencesResult.status === 'fulfilled' && !presencesResult.value.error) {
+    for (const item of presencesResult.value.data ?? []) {
+      events.push({
+        id: String(item.id),
+        kind: 'presence',
+        title: 'Check-in registrado',
+        description: `Método: ${item.validation_method ?? 'gps'}`,
+        status: String(item.status ?? 'valid'),
+        created_at: String(item.confirmed_at ?? item.created_at),
+      });
+    }
+  }
+
+  if (rondaResult.status === 'fulfilled' && !rondaResult.value.error) {
+    for (const item of rondaResult.value.data ?? []) {
+      events.push({
+        id: String(item.id),
+        kind: 'ronda',
+        title: 'Ponto de ronda confirmado',
+        description: String(item.notes ?? 'Sem observações'),
+        status: String(item.status ?? 'concluida'),
+        created_at: String(item.confirmed_at ?? item.created_at),
+      });
+    }
+  }
+
+  if (handoverResult.status === 'fulfilled' && !handoverResult.value.error) {
+    for (const item of handoverResult.value.data ?? []) {
+      events.push({
+        id: String(item.id),
+        kind: 'handover',
+        title: 'Passagem de plantão',
+        description: String(item.notes ?? 'Sem observações'),
+        status: String(item.status ?? 'confirmada'),
+        created_at: String(item.confirmed_at ?? item.created_at),
+      });
+    }
+  }
+
+  return events
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 20);
+}

@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { createOccurrence, getTodaySchedules, type MobileSchedule } from '../services/mobile-data';
+import { captureEvidencePhoto, pickEvidenceFromLibrary, uploadEvidencePhoto, type EvidenceAsset } from '../services/evidence';
 import { getCurrentLocation } from '../services/location';
 
 type OccurrenceType = 'furto' | 'acidente' | 'invasao' | 'dano' | 'briga' | 'suspeito' | 'outro';
@@ -18,6 +19,7 @@ export function OccurrenceScreen() {
   const [type, setType] = useState<OccurrenceType>('suspeito');
   const [severity, setSeverity] = useState<Severity>('media');
   const [description, setDescription] = useState('');
+  const [photo, setPhoto] = useState<EvidenceAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -39,6 +41,26 @@ export function OccurrenceScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function takePhoto() {
+    setError(null);
+    try {
+      const asset = await captureEvidencePhoto();
+      if (asset) setPhoto(asset);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function choosePhoto() {
+    setError(null);
+    try {
+      const asset = await pickEvidenceFromLibrary();
+      if (asset) setPhoto(asset);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function submit() {
     if (!profile || !selected) return;
     setSubmitting(true);
@@ -46,9 +68,11 @@ export function OccurrenceScreen() {
     setMessage(null);
     try {
       const location = await getCurrentLocation().catch(() => null);
-      const result = await createOccurrence({ profile, schedule: selected, location, type, severity, description });
+      const photoUrl = photo ? await uploadEvidencePhoto({ companyId: profile.company_id, asset: photo, prefix: 'occurrence' }) : null;
+      const result = await createOccurrence({ profile, schedule: selected, location, type, severity, description, photoUrl });
       setDescription('');
-      setMessage(`Ocorrência registrada: ${result.id}`);
+      setPhoto(null);
+      setMessage(result.queued ? 'Ocorrência salva offline para sincronização.' : `Ocorrência registrada: ${result.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -98,6 +122,19 @@ export function OccurrenceScreen() {
         style={styles.textarea}
       />
 
+      <View style={styles.photoCard}>
+        <Text style={styles.label}>Foto/evidência</Text>
+        <Text style={styles.photoText}>{photo ? `Foto selecionada: ${photo.fileName}` : 'Opcional, mas recomendado.'}</Text>
+        <View style={styles.row}>
+          <Pressable style={[styles.secondaryButton, styles.flex]} onPress={takePhoto}>
+            <Text style={styles.secondaryButtonText}>Câmera</Text>
+          </Pressable>
+          <Pressable style={[styles.secondaryButton, styles.flex]} onPress={choosePhoto}>
+            <Text style={styles.secondaryButtonText}>Galeria</Text>
+          </Pressable>
+        </View>
+      </View>
+
       <Pressable disabled={!selected || submitting || description.trim().length < 5} onPress={submit} style={[styles.primaryButton, (!selected || submitting || description.trim().length < 5) && styles.disabled]}>
         {submitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Salvar ocorrência</Text>}
       </Pressable>
@@ -124,8 +161,14 @@ const styles = StyleSheet.create({
   chipText: { color: '#334155', fontWeight: '800' },
   chipTextActive: { color: '#ffffff' },
   textarea: { minHeight: 120, backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 1, borderColor: '#cbd5e1', padding: 14, textAlignVertical: 'top', fontSize: 16 },
+  photoCard: { backgroundColor: '#ffffff', borderRadius: 18, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, gap: 10 },
+  photoText: { color: '#475569', fontWeight: '700' },
+  row: { flexDirection: 'row', gap: 10 },
+  flex: { flex: 1 },
   primaryButton: { backgroundColor: '#1e40af', borderRadius: 16, padding: 16, alignItems: 'center' },
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
+  secondaryButton: { backgroundColor: '#ffffff', borderRadius: 16, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1' },
+  secondaryButtonText: { color: '#0f172a', fontWeight: '900' },
   disabled: { opacity: 0.55 },
   error: { color: '#b91c1c', backgroundColor: '#fee2e2', padding: 12, borderRadius: 12 },
   success: { color: '#166534', backgroundColor: '#dcfce7', padding: 12, borderRadius: 12, fontWeight: '800' },

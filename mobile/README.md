@@ -63,3 +63,30 @@ Depois de aplicar esta fase, faça deploy da função:
 ```bash
 npx supabase functions deploy sync-offline-event --use-api
 ```
+
+## Fase 6C — Câmera, QR Code e Evidências
+
+Implementado:
+
+- Upload de evidências no bucket `evidence`, usando paths por `company_id`.
+- Foto no check-in quando o posto exige `require_photo`.
+- Foto opcional em ocorrência.
+- Leitor de QR Code com `expo-camera`.
+- Tela de ronda com pontos cadastrados em `ronda_points`.
+- Confirmação de ponto de ronda em `ronda_logs`.
+- Sync offline de ronda ajustado para o schema real.
+
+Dependências necessárias:
+
+```bash
+cd mobile
+npx expo install expo-camera expo-image-picker
+npm run typecheck
+```
+
+Depois, na raiz:
+
+```bash
+npm run verify
+npx supabase functions deploy sync-offline-event --use-api
+```

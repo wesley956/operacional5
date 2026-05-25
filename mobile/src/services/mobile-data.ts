@@ -27,6 +27,20 @@ export interface MobileSchedule {
   post: MobilePost;
 }
 
+export interface MobileRondaPoint {
+  id: string;
+  post_id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_meters: number;
+  qr_code_token: string | null;
+  nfc_uid: string | null;
+  sequence_order: number;
+  require_photo: boolean;
+  active: boolean;
+}
+
 export interface MobileMutationResult {
   id: string;
   status?: string;
@@ -94,15 +108,29 @@ export async function getTodaySchedules(profileId: string): Promise<MobileSchedu
   });
 }
 
+export async function getRondaPoints(postId: string): Promise<MobileRondaPoint[]> {
+  const { data, error } = await supabase
+    .from('ronda_points')
+    .select('id,post_id,name,lat,lng,radius_meters,qr_code_token,nfc_uid,sequence_order,require_photo,active')
+    .eq('post_id', postId)
+    .eq('active', true)
+    .order('sequence_order', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as MobileRondaPoint[];
+}
+
 async function queueEvent(params: {
   type: OfflineEventType;
   idempotencyKey: string;
   payload: Record<string, unknown>;
+  photoUrl?: string | null;
 }): Promise<MobileMutationResult> {
   const row = await enqueueOfflineEvent({
     type: params.type,
     idempotencyKey: params.idempotencyKey,
     payload: params.payload,
+    photoUrl: params.photoUrl,
   });
 
   return {
@@ -119,6 +147,8 @@ export async function confirmPresence(params: {
   schedule: MobileSchedule;
   location: LocationResult;
   gpsValid: boolean;
+  photoUrl?: string | null;
+  validationMethod?: 'gps' | 'qr' | 'nfc' | 'manual';
 }): Promise<MobileMutationResult> {
   const idempotencyKey = `presence:${params.profile.id}:${params.schedule.id}:${todayKey()}`;
   const createdAt = new Date().toISOString();
@@ -131,7 +161,8 @@ export async function confirmPresence(params: {
     gps_lng: params.location.lng,
     gps_valid: params.gpsValid,
     accuracy: params.location.accuracy,
-    validation_method: 'gps',
+    validation_method: params.validationMethod ?? 'gps',
+    photo_url: params.photoUrl ?? null,
     is_mock_location: params.location.isMock,
     status: params.gpsValid && !params.location.isMock ? 'valid' : 'pending_review',
     offline_created_at: createdAt,
@@ -145,7 +176,7 @@ export async function confirmPresence(params: {
   };
 
   if (!(await isProbablyOnline())) {
-    return queueEvent({ type: 'presence', idempotencyKey, payload: offlinePayload });
+    return queueEvent({ type: 'presence', idempotencyKey, payload: offlinePayload, photoUrl: params.photoUrl });
   }
 
   try {
@@ -159,7 +190,7 @@ export async function confirmPresence(params: {
     return data as MobileMutationResult;
   } catch (err) {
     if (shouldQueueAfterError(err)) {
-      return queueEvent({ type: 'presence', idempotencyKey, payload: offlinePayload });
+      return queueEvent({ type: 'presence', idempotencyKey, payload: offlinePayload, photoUrl: params.photoUrl });
     }
     throw err;
   }
@@ -172,6 +203,7 @@ export async function createOccurrence(params: {
   type: 'furto' | 'acidente' | 'invasao' | 'dano' | 'briga' | 'suspeito' | 'outro' | 'sos';
   severity: 'baixa' | 'media' | 'alta' | 'critica';
   description: string;
+  photoUrl?: string | null;
 }): Promise<MobileMutationResult> {
   const idempotencyKey = `occurrence:${params.profile.id}:${Date.now()}`;
   const syncType: OfflineEventType = params.type === 'sos' ? 'sos' : 'occurrence';
@@ -184,6 +216,7 @@ export async function createOccurrence(params: {
     type: params.type,
     severity: params.severity,
     description: params.description,
+    photo_url: params.photoUrl ?? null,
     gps_lat: params.location?.lat ?? null,
     gps_lng: params.location?.lng ?? null,
     status: 'aberta',
@@ -191,7 +224,7 @@ export async function createOccurrence(params: {
   };
 
   if (!(await isProbablyOnline())) {
-    const queued = await queueEvent({ type: syncType, idempotencyKey, payload });
+    const queued = await queueEvent({ type: syncType, idempotencyKey, payload, photoUrl: params.photoUrl });
     return { ...queued, type: params.type, severity: params.severity, created_at: createdAt };
   }
 
@@ -206,8 +239,66 @@ export async function createOccurrence(params: {
     return data as MobileMutationResult;
   } catch (err) {
     if (shouldQueueAfterError(err)) {
-      const queued = await queueEvent({ type: syncType, idempotencyKey, payload });
+      const queued = await queueEvent({ type: syncType, idempotencyKey, payload, photoUrl: params.photoUrl });
       return { ...queued, type: params.type, severity: params.severity, created_at: createdAt };
+    }
+    throw err;
+  }
+}
+
+export async function confirmRondaPoint(params: {
+  profile: MobileProfile;
+  schedule: MobileSchedule;
+  point: MobileRondaPoint;
+  location: LocationResult | null;
+  qrToken: string;
+  notes?: string;
+  photoUrl?: string | null;
+}): Promise<MobileMutationResult> {
+  const expectedToken = params.point.qr_code_token?.trim();
+  const scannedToken = params.qrToken.trim();
+
+  if (expectedToken && scannedToken !== expectedToken) {
+    throw new Error('QR Code não corresponde ao ponto de ronda selecionado.');
+  }
+
+  const createdAt = new Date().toISOString();
+  const idempotencyKey = `ronda:${params.profile.id}:${params.point.id}:${Date.now()}`;
+
+  const tablePayload = {
+    post_id: params.schedule.post.id,
+    employee_id: params.profile.id,
+    ronda_point_id: params.point.id,
+    status: 'concluida',
+    confirmed_at: createdAt,
+    gps_lat: params.location?.lat ?? null,
+    gps_lng: params.location?.lng ?? null,
+    photo_url: params.photoUrl ?? null,
+    notes: params.notes ?? null,
+    idempotency_key: idempotencyKey,
+  };
+
+  const offlinePayload = {
+    ...tablePayload,
+    company_id: params.profile.company_id,
+  };
+
+  if (!(await isProbablyOnline())) {
+    return queueEvent({ type: 'ronda', idempotencyKey, payload: offlinePayload, photoUrl: params.photoUrl });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('ronda_logs')
+      .insert(tablePayload)
+      .select('id,status,confirmed_at')
+      .single();
+
+    if (error) throw error;
+    return data as MobileMutationResult;
+  } catch (err) {
+    if (shouldQueueAfterError(err)) {
+      return queueEvent({ type: 'ronda', idempotencyKey, payload: offlinePayload, photoUrl: params.photoUrl });
     }
     throw err;
   }

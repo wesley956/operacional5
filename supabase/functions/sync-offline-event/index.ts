@@ -111,7 +111,6 @@ function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown
 
   if (type === 'ronda') {
     const insertPayload = pickAllowed(payload, [
-      'company_id',
       'post_id',
       'employee_id',
       'ronda_point_id',
@@ -120,6 +119,7 @@ function sanitizePayload(type: OfflineEventType, payload: Record<string, unknown
       'status',
       'notes',
       'photo_url',
+      'confirmed_at',
       'created_at',
     ]);
     insertPayload.idempotency_key = idempotencyKey;

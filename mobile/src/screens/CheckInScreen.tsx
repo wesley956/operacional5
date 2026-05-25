@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { confirmPresence, getTodaySchedules, type MobileSchedule } from '../services/mobile-data';
+import { captureEvidencePhoto, pickEvidenceFromLibrary, uploadEvidencePhoto, type EvidenceAsset } from '../services/evidence';
 import { getCurrentLocation, isWithinGeofence, type LocationResult } from '../services/location';
 
 export function CheckInScreen() {
@@ -10,6 +11,7 @@ export function CheckInScreen() {
   const [schedules, setSchedules] = useState<MobileSchedule[]>([]);
   const [selected, setSelected] = useState<MobileSchedule | null>(null);
   const [location, setLocation] = useState<LocationResult | null>(null);
+  const [photo, setPhoto] = useState<EvidenceAsset | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -32,9 +34,13 @@ export function CheckInScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function captureLocation() {
+  const gpsValid = useMemo(() => {
+    if (!selected || !location) return false;
+    return isWithinGeofence(location.lat, location.lng, selected.post.lat, selected.post.lng, selected.post.radius_meters);
+  }, [location, selected]);
+
+  async function loadLocation() {
     setError(null);
-    setMessage(null);
     try {
       setLocation(await getCurrentLocation());
     } catch (err) {
@@ -42,24 +48,40 @@ export function CheckInScreen() {
     }
   }
 
+  async function takePhoto() {
+    setError(null);
+    try {
+      const asset = await captureEvidencePhoto();
+      if (asset) setPhoto(asset);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function choosePhoto() {
+    setError(null);
+    try {
+      const asset = await pickEvidenceFromLibrary();
+      if (asset) setPhoto(asset);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function submit() {
-    if (!profile || !selected) return;
+    if (!profile || !selected || !location) return;
+    if (selected.post.require_photo && !photo) {
+      setError('Este posto exige foto para o check-in.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setMessage(null);
     try {
-      const currentLocation = location ?? await getCurrentLocation();
-      setLocation(currentLocation);
-      const gpsValid = isWithinGeofence(
-        currentLocation.lat,
-        currentLocation.lng,
-        selected.post.lat,
-        selected.post.lng,
-        selected.post.radius_meters
-      );
-
-      const result = await confirmPresence({ profile, schedule: selected, location: currentLocation, gpsValid });
-      setMessage(`Check-in registrado com status: ${result.status}`);
+      const photoUrl = photo ? await uploadEvidencePhoto({ companyId: profile.company_id, asset: photo, prefix: 'presence' }) : null;
+      const result = await confirmPresence({ profile, schedule: selected, location, gpsValid, photoUrl });
+      setMessage(result.queued ? 'Check-in salvo offline para sincronização.' : `Check-in registrado: ${result.status ?? 'valid'}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -69,7 +91,7 @@ export function CheckInScreen() {
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Check-in GPS</Text>
+      <Text style={styles.title}>Check-in</Text>
       {loading ? <ActivityIndicator color="#1e40af" /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {message ? <Text style={styles.success}>{message}</Text> : null}
@@ -79,24 +101,39 @@ export function CheckInScreen() {
           <Text style={styles.postName}>{schedule.post.name}</Text>
           <Text style={styles.address}>{schedule.post.address}</Text>
           <Text style={styles.radius}>Raio permitido: {schedule.post.radius_meters}m</Text>
+          {schedule.post.require_photo ? <Text style={styles.warning}>Foto obrigatória</Text> : null}
         </Pressable>
       ))}
 
-      {!loading && schedules.length === 0 ? <Text style={styles.empty}>Nenhuma escala disponível para check-in hoje.</Text> : null}
+      {!loading && schedules.length === 0 ? <Text style={styles.empty}>Nenhuma escala encontrada para hoje.</Text> : null}
+
+      <Pressable style={styles.secondaryButton} onPress={loadLocation}>
+        <Text style={styles.secondaryButtonText}>Atualizar localização</Text>
+      </Pressable>
 
       {location ? (
         <View style={styles.locationBox}>
           <Text style={styles.locationText}>GPS: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}</Text>
-          <Text style={styles.locationText}>Acurácia: {Math.round(location.accuracy)}m</Text>
-          <Text style={styles.locationText}>Mock suspeito: {location.isMock ? 'sim' : 'não'}</Text>
+          <Text style={styles.locationText}>Precisão: {Math.round(location.accuracy)}m</Text>
+          <Text style={styles.locationText}>Geofence: {gpsValid ? 'válido' : 'fora do raio'}</Text>
+          <Text style={styles.locationText}>Mock location: {location.isMock ? 'suspeito' : 'não detectado'}</Text>
         </View>
       ) : null}
 
-      <Pressable style={styles.secondaryButton} onPress={captureLocation}>
-        <Text style={styles.secondaryButtonText}>Capturar localização</Text>
-      </Pressable>
+      <View style={styles.photoCard}>
+        <Text style={styles.label}>Evidência fotográfica</Text>
+        <Text style={styles.photoText}>{photo ? `Foto selecionada: ${photo.fileName}` : 'Nenhuma foto anexada.'}</Text>
+        <View style={styles.row}>
+          <Pressable style={[styles.secondaryButton, styles.flex]} onPress={takePhoto}>
+            <Text style={styles.secondaryButtonText}>Câmera</Text>
+          </Pressable>
+          <Pressable style={[styles.secondaryButton, styles.flex]} onPress={choosePhoto}>
+            <Text style={styles.secondaryButtonText}>Galeria</Text>
+          </Pressable>
+        </View>
+      </View>
 
-      <Pressable disabled={!selected || submitting} style={[styles.primaryButton, (!selected || submitting) && styles.disabled]} onPress={submit}>
+      <Pressable disabled={!selected || !location || submitting} style={[styles.primaryButton, (!selected || !location || submitting) && styles.disabled]} onPress={submit}>
         {submitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Confirmar presença</Text>}
       </Pressable>
 
@@ -116,8 +153,14 @@ const styles = StyleSheet.create({
   postName: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
   address: { color: '#64748b', marginTop: 4 },
   radius: { color: '#1e40af', marginTop: 8, fontWeight: '800' },
+  warning: { color: '#92400e', backgroundColor: '#fef3c7', padding: 8, borderRadius: 10, marginTop: 8, fontWeight: '800' },
   locationBox: { backgroundColor: '#e0f2fe', padding: 14, borderRadius: 16 },
   locationText: { color: '#075985', fontWeight: '700' },
+  photoCard: { backgroundColor: '#ffffff', borderRadius: 18, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, gap: 10 },
+  label: { fontWeight: '900', color: '#334155' },
+  photoText: { color: '#475569', fontWeight: '700' },
+  row: { flexDirection: 'row', gap: 10 },
+  flex: { flex: 1 },
   primaryButton: { backgroundColor: '#1e40af', borderRadius: 16, padding: 16, alignItems: 'center' },
   primaryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
   secondaryButton: { backgroundColor: '#ffffff', borderRadius: 16, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1' },

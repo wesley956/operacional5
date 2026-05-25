@@ -78,6 +78,12 @@ export function OperatorHomeScreen() {
         <Pressable style={[styles.actionButton, styles.secondary]} onPress={() => router.push('/occurrence')}>
           <Text style={styles.actionTextDark}>Ocorrência</Text>
         </Pressable>
+        <Pressable style={[styles.actionButton, styles.secondary]} onPress={() => router.push('/ronda')}>
+          <Text style={styles.actionTextDark}>Ronda QR</Text>
+        </Pressable>
+        <Pressable style={[styles.actionButton, styles.secondary]} onPress={() => router.push('/qr-scan')}>
+          <Text style={styles.actionTextDark}>Leitor QR</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.sectionTitle}>Escala de hoje</Text>
@@ -90,6 +96,8 @@ export function OperatorHomeScreen() {
           <Text style={styles.postName}>{schedule.post.name}</Text>
           <Text style={styles.address}>{schedule.post.address}</Text>
           <Text style={styles.shift}>{formatTime(schedule.shift_start)} → {formatTime(schedule.shift_end)}</Text>
+          {schedule.post.require_ronda ? <Text style={styles.rondaRequired}>Ronda obrigatória neste posto</Text> : null}
+          {schedule.post.require_photo ? <Text style={styles.rondaRequired}>Foto obrigatória no check-in</Text> : null}
         </View>
       ))}
 
@@ -102,35 +110,36 @@ export function OperatorHomeScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#f1f5f9' },
-  content: { padding: 16, gap: 16, paddingBottom: 32 },
-  headerCard: { padding: 20, borderRadius: 22, backgroundColor: '#1e40af' },
-  kicker: { color: '#bfdbfe', fontWeight: '700' },
-  title: { color: '#ffffff', fontSize: 24, fontWeight: '900', marginTop: 4 },
-  role: { color: '#dbeafe', marginTop: 4, fontWeight: '800' },
-  syncCard: { padding: 16, borderRadius: 18, borderWidth: 1 },
+  content: { padding: 16, gap: 16 },
+  headerCard: { backgroundColor: '#0f172a', borderRadius: 24, padding: 20 },
+  kicker: { color: '#93c5fd', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  title: { color: '#ffffff', fontSize: 26, fontWeight: '900', marginTop: 4 },
+  role: { color: '#cbd5e1', marginTop: 6, fontWeight: '800' },
+  syncCard: { borderRadius: 20, padding: 16, borderWidth: 1 },
   onlineCard: { backgroundColor: '#ecfdf5', borderColor: '#86efac' },
   offlineCard: { backgroundColor: '#fff7ed', borderColor: '#fdba74' },
-  syncHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, alignItems: 'center' },
-  syncTitle: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
-  syncBadge: { fontWeight: '900', color: '#1e40af' },
+  syncHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  syncTitle: { color: '#0f172a', fontSize: 18, fontWeight: '900' },
+  syncBadge: { color: '#334155', fontWeight: '900' },
   syncText: { color: '#475569', marginTop: 6 },
   syncError: { color: '#b91c1c', marginTop: 8, fontWeight: '700' },
-  syncButton: { marginTop: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, padding: 10, alignItems: 'center' },
-  syncButtonText: { color: '#0f172a', fontWeight: '900' },
+  syncButton: { marginTop: 12, backgroundColor: '#0f172a', borderRadius: 12, padding: 12, alignItems: 'center' },
+  syncButtonText: { color: '#ffffff', fontWeight: '900' },
   actions: { gap: 10 },
   actionButton: { borderRadius: 18, padding: 16, alignItems: 'center' },
-  primary: { backgroundColor: '#2563eb' },
+  primary: { backgroundColor: '#1e40af' },
   danger: { backgroundColor: '#dc2626' },
   secondary: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1' },
   actionText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
   actionTextDark: { color: '#0f172a', fontSize: 16, fontWeight: '900' },
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  scheduleCard: { padding: 16, borderRadius: 18, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0' },
-  postName: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
+  sectionTitle: { fontSize: 19, fontWeight: '900', color: '#0f172a' },
+  scheduleCard: { backgroundColor: '#ffffff', borderRadius: 18, padding: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  postName: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
   address: { color: '#64748b', marginTop: 4 },
   shift: { color: '#1e40af', fontWeight: '900', marginTop: 8 },
+  rondaRequired: { color: '#92400e', backgroundColor: '#fef3c7', padding: 8, borderRadius: 10, marginTop: 8, fontWeight: '800' },
   error: { color: '#b91c1c', backgroundColor: '#fee2e2', padding: 12, borderRadius: 12 },
   empty: { color: '#64748b', backgroundColor: '#ffffff', padding: 16, borderRadius: 14 },
-  logout: { alignItems: 'center', padding: 14 },
-  logoutText: { color: '#64748b', fontWeight: '800' },
+  logout: { padding: 16, alignItems: 'center' },
+  logoutText: { color: '#64748b', fontWeight: '900' },
 });

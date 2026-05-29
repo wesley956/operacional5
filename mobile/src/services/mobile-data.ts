@@ -342,6 +342,10 @@ export async function createShiftHandover(params: {
   notes: string;
   pendingItems: string[];
   retentionReason?: string | null;
+  incomingPhotoUrl?: string | null;
+  gpsLat?: number | null;
+  gpsLng?: number | null;
+  gpsValid?: boolean | null;
 }): Promise<MobileMutationResult> {
   const createdAt = new Date().toISOString();
   const idempotencyKey = `handover:${params.profile.id}:${params.schedule.id}:${Date.now()}`;
@@ -355,6 +359,11 @@ export async function createShiftHandover(params: {
     pending_items: params.pendingItems,
     retention_reason: params.retentionReason || null,
     confirmed_at: createdAt,
+    incoming_photo_url: params.incomingPhotoUrl || null,
+    gps_lat: params.gpsLat ?? null,
+    gps_lng: params.gpsLng ?? null,
+    gps_valid: Boolean(params.gpsValid),
+    device_info: { source: 'mobile_handover_identity' },
     idempotency_key: idempotencyKey,
   };
 
@@ -493,3 +502,16 @@ async function notifySosReceivers(params: {
   }
 }
 
+
+
+export async function validateHandoverEmployeeByCode(params: {
+  fieldCode: string;
+  pin?: string;
+}): Promise<MobileEmployeeOption & { field_code?: string; pin_required?: boolean }> {
+  const { data, error } = await supabase.functions.invoke('validate-handover-employee', {
+    body: { field_code: params.fieldCode, pin: params.pin ?? '' },
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error ?? 'Não foi possível validar o funcionário.');
+  return data.employee as MobileEmployeeOption & { field_code?: string; pin_required?: boolean };
+}

@@ -127,3 +127,17 @@ Observações importantes:
 - No Android, push remoto não funciona no Expo Go moderno. Para testar push remoto, use Development Build/EAS.
 - O app não quebra no Expo Go: se o token não puder ser gerado, a tela de perfil mostra o motivo.
 - Para enhanced security do Expo Push Service, configure `EXPO_ACCESS_TOKEN` nos Supabase Secrets.
+
+## Fase 10A — Passagem de plantão com identificação por código + foto
+
+A passagem de plantão agora permite validar quem vai assumir o posto usando código/matrícula.
+
+Fluxo:
+1. Operador atual abre Passagem de Plantão.
+2. Próximo operador digita código/matrícula.
+3. Se houver PIN configurado no banco, o PIN será exigido.
+4. O app tira foto do próximo operador.
+5. O app captura localização.
+6. A passagem é registrada com operador que saiu, operador que assumiu, posto, foto, GPS, observações e pendências.
+
+A fase atual aceita código + foto quando o funcionário ainda não tem PIN configurado.

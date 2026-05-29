@@ -127,6 +127,11 @@ function sanitizeEventPayload(params: {
     'pending_items',
     'retention_reason',
     'confirmed_at',
+    'incoming_photo_url',
+    'gps_lat',
+    'gps_lng',
+    'gps_valid',
+    'device_info',
   ]);
 
   insertPayload.outgoing_employee_id = callerProfile.id;

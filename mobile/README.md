@@ -141,3 +141,16 @@ Fluxo:
 6. A passagem é registrada com operador que saiu, operador que assumiu, posto, foto, GPS, observações e pendências.
 
 A fase atual aceita código + foto quando o funcionário ainda não tem PIN configurado.
+
+## Fase 10C — Assumir posto com matrícula/código + foto + GPS
+
+A tela Assumir posto agora segue o modelo de aparelho fixo da empresa no posto:
+
+1. Operador digita matrícula/código.
+2. PIN é aceito se estiver configurado.
+3. Sistema valida o operador na empresa.
+4. O app carrega as escalas do operador validado.
+5. O app exige GPS e foto.
+6. O registro de presença é criado em nome do operador validado, não necessariamente em nome do usuário logado no aparelho.
+
+Isso aproxima o app do cenário em que o celular fica no posto e não no celular pessoal do funcionário.

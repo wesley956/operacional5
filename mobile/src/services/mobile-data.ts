@@ -144,18 +144,20 @@ async function queueEvent(params: {
 
 export async function confirmPresence(params: {
   profile: MobileProfile;
+  employee?: MobileEmployeeOption | null;
   schedule: MobileSchedule;
   location: LocationResult;
   gpsValid: boolean;
   photoUrl?: string | null;
   validationMethod?: 'gps' | 'qr' | 'nfc' | 'manual';
 }): Promise<MobileMutationResult> {
-  const idempotencyKey = `presence:${params.profile.id}:${params.schedule.id}:${todayKey()}`;
+  const employeeId = params.employee?.id ?? params.profile.id;
+  const idempotencyKey = `presence:${employeeId}:${params.schedule.id}:${todayKey()}`;
   const createdAt = new Date().toISOString();
 
   const tablePayload = {
     schedule_id: params.schedule.id,
-    employee_id: params.profile.id,
+    employee_id: employeeId,
     post_id: params.schedule.post.id,
     gps_lat: params.location.lat,
     gps_lng: params.location.lng,

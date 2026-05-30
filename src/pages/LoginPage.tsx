@@ -38,8 +38,7 @@ export function LoginPage() {
     }
   }, [isAuthenticated, isLoading]);
 
-  async function handleLogin(event?: React.FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  async function handleLogin() {
 
     setLoading(true);
     setError('');
@@ -62,8 +61,7 @@ export function LoginPage() {
 
       window.setTimeout(() => {
         window.location.hash = '/';
-        window.location.reload();
-      }, 200);
+      }, 800);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao entrar.';
       setError(message);
@@ -84,8 +82,7 @@ export function LoginPage() {
 
       window.setTimeout(() => {
         window.location.hash = '/';
-        window.location.reload();
-      }, 200);
+      }, 800);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao entrar no demo.';
       setError(message);
@@ -106,6 +103,10 @@ export function LoginPage() {
           <p className="text-sm text-gray-400 mt-1">Sistema de Gestão de Segurança Privada</p>
         </div>
 
+        <div className="mb-4 rounded-xl bg-red-600 p-3 text-center text-sm font-black text-white">
+          LOGIN NOVO CARREGADO — TESTE VISUAL
+        </div>
+
         <Card className="mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Entrar no sistema</h2>
 
@@ -121,7 +122,7 @@ export function LoginPage() {
             </div>
           ) : null}
 
-          <form className="space-y-4" onSubmit={handleLogin}>
+          <div className="space-y-4">
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email
@@ -165,14 +166,15 @@ export function LoginPage() {
             </div>
 
             <button
-              type="submit"
+              type="button"
               disabled={loading}
+              onClick={() => void handleLogin()}
               className="w-full inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <LogIn className="w-4 h-4 mr-2" />
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
-          </form>
+          </div>
         </Card>
 
         <Card>

@@ -37,3 +37,4 @@ mobile/build/
 
 # Supabase CLI local cache
 supabase/.temp/
+mobile/.env.local

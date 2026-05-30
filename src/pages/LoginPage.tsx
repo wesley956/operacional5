@@ -3,6 +3,7 @@
 // ============================================================
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Card } from '@/components/ui';
 import { useEmployees } from '@/hooks';
@@ -19,6 +20,7 @@ const ROLE_COLORS: Record<Role, string> = {
 };
 
 export function LoginPage() {
+  const navigate = useNavigate();
   const { login, loginDemo } = useAuth();
   const { employees } = useEmployees({ active: true });
   const [email, setEmail] = useState('');
@@ -35,6 +37,7 @@ export function LoginPage() {
 
     try {
       await login(email, password);
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
     } finally {
@@ -110,7 +113,7 @@ export function LoginPage() {
             {demoUsers.map(user => (
               <button
                 key={user.id}
-                onClick={() => void loginDemo(user.role)}
+                onClick={() => void loginDemo(user.role).then(() => navigate('/dashboard', { replace: true }))}
                 className={`flex flex-col items-center gap-1 p-3 rounded-lg text-xs font-medium transition-all ${ROLE_COLORS[user.role]}`}
               >
                 <span className="font-bold">{user.name.split(' ')[0]}</span>

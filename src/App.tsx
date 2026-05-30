@@ -73,6 +73,7 @@ function TenantRoutes() {
   return (
     <Routes>
       <Route path="/" element={<TenantGuard><DashboardPage /></TenantGuard>} />
+      <Route path="/dashboard" element={<TenantGuard><DashboardPage /></TenantGuard>} />
       <Route path="/map" element={<TenantGuard><MapPage /></TenantGuard>} />
       <Route path="/posts" element={<TenantGuard permission={p => p.canViewAllPosts || p.canViewAssignedPosts}><PostsPage /></TenantGuard>} />
       <Route path="/employees" element={<TenantGuard permission={p => p.canViewAllEmployees}><EmployeesPage /></TenantGuard>} />
@@ -87,9 +88,9 @@ function TenantRoutes() {
       <Route path="/client-portal" element={<TenantGuard><ClientPortalPage /></TenantGuard>} />
       <Route path="/settings" element={<TenantGuard permission={p => p.canManageSettings}><SettingsPage /></TenantGuard>} />
       <Route path="/admin" element={<TenantGuard permission={p => p.canAccessAdmin}><AdminPage /></TenantGuard>} />
+      <Route path="/alerts" element={<TenantGuard><AlertsCenterPage /></TenantGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
-            <Route path="/alerts" element={<AlertsCenterPage />} />
-      </Routes>
+    </Routes>
   );
 }
 

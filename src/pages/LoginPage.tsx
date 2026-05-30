@@ -37,7 +37,7 @@ export function LoginPage() {
 
     try {
       await login(email, password);
-      navigate('/dashboard', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
     } finally {
@@ -113,7 +113,7 @@ export function LoginPage() {
             {demoUsers.map(user => (
               <button
                 key={user.id}
-                onClick={() => void loginDemo(user.role).then(() => navigate('/dashboard', { replace: true }))}
+                onClick={() => void loginDemo(user.role).then(() => navigate('/', { replace: true }))}
                 className={`flex flex-col items-center gap-1 p-3 rounded-lg text-xs font-medium transition-all ${ROLE_COLORS[user.role]}`}
               >
                 <span className="font-bold">{user.name.split(' ')[0]}</span>

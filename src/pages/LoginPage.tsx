@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Button, Input, Card } from '@/components/ui';
+import { Input, Card } from '@/components/ui';
 import { useEmployees } from '@/hooks';
 import { ROLE_LABELS, type Role } from '@/lib/types';
 import { Shield, Eye, EyeOff, LogIn } from 'lucide-react';
@@ -29,6 +29,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [debug, setDebug] = useState('');
 
   const demoUsers = employees.filter(user => user.role in ROLE_COLORS);
 
@@ -42,14 +43,29 @@ export function LoginPage() {
     setLoading(true);
     setError('');
     setSuccess('');
+    setDebug('Tentando autenticar...');
 
     try {
-      await login(email, password);
+      if (!email.trim()) {
+        throw new Error('Informe o email.');
+      }
+
+      if (!password) {
+        throw new Error('Informe a senha.');
+      }
+
+      await login(email.trim(), password);
+      setDebug('Login aprovado pelo Supabase.');
       setSuccess('Login confirmado. Redirecionando...');
-      window.location.hash = '/';
-      window.location.reload();
+
+      window.setTimeout(() => {
+        window.location.hash = '/';
+        window.location.reload();
+      }, 150);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
+      const message = err instanceof Error ? err.message : 'Erro ao entrar.';
+      setDebug(`Falha no login: ${message}`);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -83,7 +99,19 @@ export function LoginPage() {
             </div>
           )}
 
-          <div className="space-y-4">
+          {debug && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+              Status: {debug}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              {success}
+            </div>
+          )}
+
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void handleLogin(); }}>
             <Input
               id="email"
               label="Email"
@@ -92,7 +120,6 @@ export function LoginPage() {
               placeholder="seu@email.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
             />
             <div className="relative">
               <Input
@@ -103,7 +130,6 @@ export function LoginPage() {
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
               />
               <button
                 type="button"
@@ -114,11 +140,15 @@ export function LoginPage() {
               </button>
             </div>
 
-            <Button className="w-full" onClick={handleLogin} loading={loading}>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
               <LogIn className="w-4 h-4 mr-2" />
-              Entrar
-            </Button>
-          </div>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
         </Card>
 
         {/* Demo Mode */}

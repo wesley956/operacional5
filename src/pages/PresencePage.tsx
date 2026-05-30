@@ -390,7 +390,7 @@ export function PresencePage() {
             {/* Geofence Visualization */}
             {selected.gps_lat && selected.gps_lng && (
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Localização do Check-in</h4>
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Localização da assunção do posto</h4>
                 <div className="bg-gray-100 rounded-lg h-32 flex items-center justify-center">
                   <div className="text-center">
                     <MapPin className="w-8 h-8 text-blue-600 mx-auto mb-1" />

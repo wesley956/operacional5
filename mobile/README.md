@@ -35,13 +35,13 @@ npm run start
 - Supabase Auth real com persistência via SecureStore.
 - Login real do operador.
 - Home do operador com escala do dia.
-- Check-in GPS com geofence.
+- Assumir posto com GPS com geofence.
 - SOS criando ocorrência crítica.
 - Registro de ocorrência com GPS opcional.
 
 ## Próximas fases
 
-- QR Code no check-in.
+- QR Code no assumir posto.
 - Upload de foto/evidência.
 - Fila offline real com expo-sqlite.
 - Sync engine.
@@ -52,7 +52,7 @@ npm run start
 Implementado:
 
 - Fila offline real com `expo-sqlite`.
-- Check-in, SOS e ocorrência podem ser salvos localmente quando o app está offline.
+- Assumir posto, SOS e ocorrência podem ser salvos localmente quando o app está offline.
 - Sincronização automática quando a conexão volta.
 - Indicador online/offline na Home do operador.
 - Botão "Sincronizar agora".
@@ -69,7 +69,7 @@ npx supabase functions deploy sync-offline-event --use-api
 Implementado:
 
 - Upload de evidências no bucket `evidence`, usando paths por `company_id`.
-- Foto no check-in quando o posto exige `require_photo`.
+- Foto no assumir posto quando o posto exige `require_photo`.
 - Foto opcional em ocorrência.
 - Leitor de QR Code com `expo-camera`.
 - Tela de ronda com pontos cadastrados em `ronda_points`.

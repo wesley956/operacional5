@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
-import { createShiftHandover, getCompanyEmployees, getTodaySchedules, validateHandoverEmployeeByCode, type MobileEmployeeOption, type MobileSchedule } from '../services/mobile-data';
+import { createShiftHandover, getTodaySchedules, validateHandoverEmployeeByCode, type MobileEmployeeOption, type MobileSchedule } from '../services/mobile-data';
 import { captureAndUploadHandoverPhoto, getHandoverLocation, type HandoverLocationResult, type HandoverPhotoResult } from '../services/handover-identity';
 
 export function HandoverScreen() {
   const { profile } = useAuth();
   const [schedules, setSchedules] = useState<MobileSchedule[]>([]);
-  const [employees, setEmployees] = useState<MobileEmployeeOption[]>([]);
   const [scheduleId, setScheduleId] = useState('');
   const [incomingEmployeeId, setIncomingEmployeeId] = useState('');
   const [incomingCode, setIncomingCode] = useState('');
@@ -27,24 +26,22 @@ export function HandoverScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const selectedSchedule = useMemo(() => schedules.find((item) => item.id === scheduleId) ?? schedules[0], [schedules, scheduleId]);
-  const incomingEmployee = useMemo(() => validatedEmployee ?? employees.find((employee) => employee.id === incomingEmployeeId) ?? null, [employees, incomingEmployeeId, validatedEmployee]);
+  const incomingEmployee = validatedEmployee;
 
   const load = useCallback(async () => {
     if (!profile) return;
     setError(null);
     setLoading(true);
     try {
-      const [nextSchedules, nextEmployees] = await Promise.all([getTodaySchedules(profile.id), getCompanyEmployees(profile)]);
+      const nextSchedules = await getTodaySchedules(profile.id);
       setSchedules(nextSchedules);
-      setEmployees(nextEmployees);
       if (!scheduleId && nextSchedules[0]) setScheduleId(nextSchedules[0].id);
-      if (!incomingEmployeeId && nextEmployees[0]) setIncomingEmployeeId(nextEmployees[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [profile, scheduleId, incomingEmployeeId]);
+  }, [profile, scheduleId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -59,7 +56,7 @@ export function HandoverScreen() {
   }
 
   async function capturePhoto() {
-    if (!profile || !incomingEmployee) { setError('Valide ou selecione quem vai assumir antes de tirar a foto.'); return; }
+    if (!profile || !incomingEmployee) { setError('Valide quem vai assumir antes de tirar a foto.'); return; }
     setCapturing(true); setError(null); setMessage(null);
     try {
       const [nextPhoto, nextLocation] = await Promise.all([
@@ -108,8 +105,8 @@ export function HandoverScreen() {
         <Pressable style={[styles.primaryButton, validating && styles.disabled]} onPress={validateIncoming} disabled={validating}><Text style={styles.primaryButtonText}>{validating ? 'Validando...' : 'Validar funcionário'}</Text></Pressable>
         {incomingEmployee ? <View style={styles.validatedBox}><Text style={styles.validatedTitle}>Assumindo: {incomingEmployee.name}</Text><Text style={styles.validatedSub}>{incomingEmployee.role} · {incomingEmployee.email ?? 'sem email'}</Text></View> : null}
       </View>
-      <Text style={styles.label}>Ou selecione manualmente</Text>
-      {employees.map((employee) => <Pressable key={employee.id} style={[styles.option, employee.id === incomingEmployee?.id && styles.optionSelected]} onPress={() => { setIncomingEmployeeId(employee.id); setValidatedEmployee(employee); setIncomingCode(''); setIncomingPin(''); setPhoto(null); }}><Text style={styles.optionTitle}>{employee.name}</Text><Text style={styles.optionSubtitle}>{employee.role} · {employee.email ?? 'sem email'}</Text></Pressable>)}
+      <Text style={styles.help}>A seleção manual foi removida. Quem vai assumir precisa informar código/matrícula e confirmar com foto.</Text>
+
       <Text style={styles.label}>Foto de confirmação</Text><Pressable style={[styles.photoButton, capturing && styles.disabled]} onPress={capturePhoto} disabled={capturing}><Text style={styles.photoButtonText}>{capturing ? 'Abrindo câmera...' : 'Tirar foto de quem vai assumir'}</Text></Pressable>
       {photo?.localUri ? <View style={styles.photoPreview}><Image source={{ uri: photo.localUri }} style={styles.photo} /><Text style={styles.help}>GPS: {location?.gps_valid ? 'válido' : 'não confirmado'}</Text></View> : null}
       <Text style={styles.label}>Observações</Text><TextInput value={notes} onChangeText={setNotes} placeholder="Observações da passagem" multiline style={[styles.input, styles.textarea]} />

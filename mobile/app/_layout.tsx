@@ -21,7 +21,8 @@ export default function RootLayout() {
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="home" options={{ title: 'OPERACIONAL5' }} />
-          <Stack.Screen name="check-in" options={{ title: 'Check-in' }} />
+          <Stack.Screen name="check-in" options={{ title: 'Assumir posto' }} />
+          <Stack.Screen name="assumir-posto" options={{ title: 'Assumir posto' }} />
           <Stack.Screen name="sos" options={{ title: 'SOS' }} />
           <Stack.Screen name="occurrence" options={{ title: 'Ocorrência' }} />
         </Stack>

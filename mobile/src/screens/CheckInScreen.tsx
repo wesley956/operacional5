@@ -71,7 +71,7 @@ export function CheckInScreen() {
   async function submit() {
     if (!profile || !selected || !location) return;
     if (selected.post.require_photo && !photo) {
-      setError('Este posto exige foto para o check-in.');
+      setError('Este posto exige foto para assumir o posto.');
       return;
     }
 
@@ -81,7 +81,7 @@ export function CheckInScreen() {
     try {
       const photoUrl = photo ? await uploadEvidencePhoto({ companyId: profile.company_id, asset: photo, prefix: 'presence' }) : null;
       const result = await confirmPresence({ profile, schedule: selected, location, gpsValid, photoUrl });
-      setMessage(result.queued ? 'Check-in salvo offline para sincronização.' : `Check-in registrado: ${result.status ?? 'valid'}`);
+      setMessage(result.queued ? 'Assunção de posto salva offline para sincronização.' : `Posto assumido: ${result.status ?? 'valid'}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -91,7 +91,7 @@ export function CheckInScreen() {
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Check-in</Text>
+      <Text style={styles.title}>Assumir posto</Text>
       {loading ? <ActivityIndicator color="#1e40af" /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {message ? <Text style={styles.success}>{message}</Text> : null}

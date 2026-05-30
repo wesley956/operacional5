@@ -436,7 +436,7 @@ export async function getRecentMobileHistory(profile: MobileProfile): Promise<Mo
       events.push({
         id: String(item.id),
         kind: 'presence',
-        title: 'Check-in registrado',
+        title: 'Posto assumido',
         description: `Método: ${item.validation_method ?? 'gps'}`,
         status: String(item.status ?? 'valid'),
         created_at: String(item.confirmed_at ?? item.created_at),

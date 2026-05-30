@@ -21,7 +21,7 @@ mobile/
 │   ├── login.tsx             (Login)
 │   ├── operator/
 │   │   ├── index.tsx         (Home do operador)
-│   │   ├── checkin.tsx       (Check-in GPS/QR)
+│   │   ├── checkin.tsx       (Assumir posto com GPS/QR)
 │   │   ├── occurrence.tsx    (Registrar ocorrência)
 │   │   ├── sos.tsx           (SOS ativo)
 │   │   └── qr-scan.tsx       (Scanner QR)
@@ -285,7 +285,7 @@ export default function OperatorHome() {
         {!checkedIn ? (
           <TouchableOpacity style={styles.checkinButton} onPress={handleCheckIn}>
             <Text style={styles.checkinButtonText}>📍 CONFIRMAR CHEGADA</Text>
-            <Text style={styles.checkinSubtext}>Check-in com GPS</Text>
+            <Text style={styles.checkinSubtext}>Assumir posto com GPS</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.checkedInCard}>

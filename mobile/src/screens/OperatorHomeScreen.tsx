@@ -80,8 +80,8 @@ export function OperatorHomeScreen() {
       </View>
 
       <View style={styles.actions}>
-        <Pressable style={[styles.actionButton, styles.primary]} onPress={() => router.push('/check-in')}>
-          <Text style={styles.actionText}>Fazer check-in</Text>
+        <Pressable style={[styles.actionButton, styles.primary]} onPress={() => router.push('/assumir-posto')}>
+          <Text style={styles.actionText}>Assumir posto</Text>
         </Pressable>
         <Pressable style={[styles.actionButton, styles.danger]} onPress={() => router.push('/sos')}>
           <Text style={styles.actionText}>SOS</Text>
@@ -97,7 +97,7 @@ export function OperatorHomeScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.sectionTitle}>Escala de hoje</Text>
+      <Text style={styles.sectionTitle}>Operação de hoje</Text>
       {loading ? <ActivityIndicator color="#1e40af" /> : null}
       
       <View style={styles.quickActions}>
@@ -121,7 +121,7 @@ export function OperatorHomeScreen() {
           <Text style={styles.address}>{schedule.post.address}</Text>
           <Text style={styles.shift}>{formatTime(schedule.shift_start)} → {formatTime(schedule.shift_end)}</Text>
           {schedule.post.require_ronda ? <Text style={styles.rondaRequired}>Ronda obrigatória neste posto</Text> : null}
-          {schedule.post.require_photo ? <Text style={styles.rondaRequired}>Foto obrigatória no check-in</Text> : null}
+          {schedule.post.require_photo ? <Text style={styles.rondaRequired}>Foto obrigatória ao assumir o posto</Text> : null}
         </View>
       ))}
 

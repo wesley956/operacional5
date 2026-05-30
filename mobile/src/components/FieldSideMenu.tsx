@@ -32,9 +32,9 @@ export function FieldSideMenu({ visible, onClose }: FieldSideMenuProps) {
     },
     {
       icon: '✅',
-      label: 'Check-in',
-      description: 'Confirmar presença com GPS e evidência.',
-      action: () => go('/check-in'),
+      label: 'Assumir posto',
+      description: 'Registrar quem assumiu o posto com GPS e evidência.',
+      action: () => go('/assumir-posto'),
     },
     {
       icon: '🚨',

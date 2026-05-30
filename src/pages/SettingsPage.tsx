@@ -202,11 +202,11 @@ export function SettingsPage() {
           <div className="space-y-4">
             <Input id="timezone" label="Timezone" value={form.timezone} onChange={(event) => updateField('timezone', event.target.value)} />
             <Input id="locale" label="Localidade" value={form.locale} onChange={(event) => updateField('locale', event.target.value)} />
-            <Input id="tolerance" label="Tolerância de check-in (minutos)" type="number" min="0" value={form.toleranceMinutes} onChange={(event) => updateField('toleranceMinutes', Number(event.target.value))} />
+            <Input id="tolerance" label="Tolerância para assumir posto (minutos)" type="number" min="0" value={form.toleranceMinutes} onChange={(event) => updateField('toleranceMinutes', Number(event.target.value))} />
             <Input id="default-radius" label="Raio GPS padrão (metros)" type="number" min="1" value={form.defaultGpsRadius} onChange={(event) => updateField('defaultGpsRadius', Number(event.target.value))} />
             <Input id="min-accuracy" label="Acurácia mínima GPS (metros)" type="number" min="1" value={form.minGpsAccuracy} onChange={(event) => updateField('minGpsAccuracy', Number(event.target.value))} />
             <Input id="ronda-interval" label="Intervalo de rondas (minutos)" type="number" min="1" value={form.rondaIntervalMinutes} onChange={(event) => updateField('rondaIntervalMinutes', Number(event.target.value))} />
-            <CheckboxSetting id="require-photo" label="Exigir foto nos check-ins" checked={form.requirePhoto} onChange={(value) => updateField('requirePhoto', value)} />
+            <CheckboxSetting id="require-photo" label="Exigir foto ao assumir posto" checked={form.requirePhoto} onChange={(value) => updateField('requirePhoto', value)} />
             <CheckboxSetting id="mock-detect" label="Detectar GPS falso/mock location" checked={form.detectMockLocation} onChange={(value) => updateField('detectMockLocation', value)} />
           </div>
         </Card>

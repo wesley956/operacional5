@@ -276,7 +276,7 @@ export function PostsPage() {
 
             <div className="flex items-center gap-2">
               <input type="checkbox" id="edit-post-photo" name="require_photo" className="rounded" defaultChecked={editingPost.require_photo} />
-              <label htmlFor="edit-post-photo" className="text-sm text-gray-700">Exigir foto no check-in</label>
+              <label htmlFor="edit-post-photo" className="text-sm text-gray-700">Exigir foto ao assumir posto</label>
             </div>
 
             <div className="flex items-center gap-2">
@@ -337,7 +337,7 @@ export function PostsPage() {
 
           <div className="flex items-center gap-2">
             <input type="checkbox" id="post-photo" name="require_photo" className="rounded" defaultChecked />
-            <label htmlFor="post-photo" className="text-sm text-gray-700">Exigir foto no check-in</label>
+            <label htmlFor="post-photo" className="text-sm text-gray-700">Exigir foto ao assumir posto</label>
           </div>
 
           <div className="flex items-center gap-2">

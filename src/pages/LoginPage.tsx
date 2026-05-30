@@ -2,7 +2,7 @@
 // OPERACIONAL5 — Página de Login
 // ============================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Card } from '@/components/ui';
@@ -21,22 +21,31 @@ const ROLE_COLORS: Record<Role, string> = {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login, loginDemo } = useAuth();
+  const { login, loginDemo, isAuthenticated, isLoading } = useAuth();
   const { employees } = useEmployees({ active: true });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const demoUsers = employees.filter(user => user.role in ROLE_COLORS);
+
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate]);
 
   const handleLogin = async () => {
     setLoading(true);
     setError('');
+    setSuccess('');
 
     try {
       await login(email, password);
+      setSuccess('Login confirmado. Redirecionando...');
       navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
@@ -64,6 +73,12 @@ export function LoginPage() {
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              {success}
             </div>
           )}
 

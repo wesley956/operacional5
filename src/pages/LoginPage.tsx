@@ -46,7 +46,8 @@ export function LoginPage() {
     try {
       await login(email, password);
       setSuccess('Login confirmado. Redirecionando...');
-      navigate('/', { replace: true });
+      window.location.hash = '/';
+      window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao entrar. Use os botões abaixo para acesso rápido.');
     } finally {

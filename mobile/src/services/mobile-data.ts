@@ -478,16 +478,17 @@ export async function getRecentMobileHistory(profile: MobileProfile): Promise<Mo
       const row = item as Record<string, unknown>;
       const createdAt = asString(row.confirmed_at) ?? asString(row.created_at) ?? new Date().toISOString();
       const postName = relationName(row.posts);
+      const employeeName = relationName(row.profiles);
 
       events.push({
         id: String(row.id),
         kind: 'presence',
-        title: 'Assumiu posto',
+        title: employeeName ? `${employeeName} assumiu posto` : 'Assumiu posto',
         description: postName ? `Posto: ${postName}` : 'Assunção de posto registrada.',
         status: String(row.status ?? 'unknown'),
         created_at: createdAt,
         post_name: postName,
-        employee_name: relationName(row.profiles),
+        employee_name: employeeName,
         gps_lat: asNumber(row.gps_lat),
         gps_lng: asNumber(row.gps_lng),
         gps_valid: asBoolean(row.gps_valid),

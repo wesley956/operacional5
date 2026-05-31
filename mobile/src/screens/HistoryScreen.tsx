@@ -130,6 +130,7 @@ function RemoteCard({ item }: { item: MobileHistoryEvent }) {
       <Text style={styles.eventDesc}>{item.description}</Text>
 
       <View style={styles.chips}>
+        {item.employee_name ? <Text style={styles.chip}>Operador: {item.employee_name}</Text> : null}
         <Text style={styles.chip}>{gpsText(item)}</Text>
         <Text style={styles.chip}>{item.photo_url ? 'Foto enviada' : 'Sem foto'}</Text>
         {item.validation_method ? <Text style={styles.chip}>Método: {item.validation_method}</Text> : null}

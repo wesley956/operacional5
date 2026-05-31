@@ -32,9 +32,19 @@ export function LoginPage() {
   const demoUsers = employees.filter(user => user.role in ROLE_COLORS);
 
   useEffect(() => {
+    const blockSubmit = (event: SubmitEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setStatus('Submit nativo bloqueado. Use o botão Entrar.');
+    };
+
+    document.addEventListener('submit', blockSubmit, true);
+    return () => document.removeEventListener('submit', blockSubmit, true);
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      setStatus('Sessão autenticada. Redirecionando...');
-      window.location.hash = '/';
+      setStatus('Sessão autenticada pelo contexto.');
     }
   }, [isAuthenticated, isLoading]);
 
@@ -59,9 +69,7 @@ export function LoginPage() {
 
       setStatus('Login aprovado. Redirecionando...');
 
-      window.setTimeout(() => {
-        window.location.hash = '/';
-      }, 800);
+      // O AuthProvider troca a tela quando isAuthenticated vira true.
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao entrar.';
       setError(message);
@@ -80,9 +88,7 @@ export function LoginPage() {
       await loginDemo(role);
       setStatus('Login demo aprovado. Redirecionando...');
 
-      window.setTimeout(() => {
-        window.location.hash = '/';
-      }, 800);
+      // O AuthProvider troca a tela quando isAuthenticated vira true.
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao entrar no demo.';
       setError(message);

@@ -25,6 +25,26 @@ type NotificationLog = {
   target_user_id: string | null;
 };
 
+type PresenceAlertRow = {
+  id: string;
+  status: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  employee_id: string | null;
+  post_id: string | null;
+  gps_valid: boolean | null;
+  is_mock_location: boolean | null;
+  accuracy: number | null;
+  validation_method: string | null;
+  photo_url: string | null;
+  profiles?: { name?: string | null } | null;
+  posts?: { name?: string | null } | null;
+};
+
+type UnifiedAlert =
+  | { kind: 'occurrence'; item: AlertRow }
+  | { kind: 'presence'; item: PresenceAlertRow };
+
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
   return new Date(value).toLocaleString('pt-BR', {
@@ -39,6 +59,23 @@ function severityClass(severity?: string | null) {
   if (severity === 'critica' || severity === 'alta') return 'bg-red-100 text-red-800 border-red-200';
   if (severity === 'media') return 'bg-amber-100 text-amber-800 border-amber-200';
   return 'bg-slate-100 text-slate-700 border-slate-200';
+}
+
+
+function presenceSeverityClass(item: PresenceAlertRow) {
+  if (item.is_mock_location) return 'bg-red-100 text-red-800 border-red-200';
+  if (item.status === 'rejected') return 'bg-red-100 text-red-800 border-red-200';
+  if (item.status === 'pending_review' || item.gps_valid === false || !item.photo_url) return 'bg-amber-100 text-amber-800 border-amber-200';
+  return 'bg-slate-100 text-slate-700 border-slate-200';
+}
+
+function presenceReason(item: PresenceAlertRow) {
+  if (item.is_mock_location) return 'GPS suspeito/mock detectado';
+  if (item.status === 'rejected') return 'Assunção rejeitada';
+  if (item.status === 'pending_review') return 'Assunção aguardando revisão';
+  if (item.gps_valid === false) return 'GPS fora do raio ou inválido';
+  if (!item.photo_url) return 'Sem foto de evidência';
+  return 'Assunção de posto';
 }
 
 async function readFunctionError(error: unknown): Promise<string> {
@@ -68,6 +105,7 @@ async function readFunctionError(error: unknown): Promise<string> {
 export default function AlertsCenterPage() {
   const supabase = useMemo(() => getSupabaseClient(), []);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [presenceAlerts, setPresenceAlerts] = useState<PresenceAlertRow[]>([]);
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [search, setSearch] = useState('');
   const [onlyCritical, setOnlyCritical] = useState(false);
@@ -94,6 +132,19 @@ export default function AlertsCenterPage() {
       const { data, error: alertError } = await query;
       if (alertError) throw alertError;
 
+      let presenceQuery = supabase
+        .from('presences')
+        .select('id,status,confirmed_at,created_at,employee_id,post_id,gps_valid,is_mock_location,accuracy,validation_method,photo_url,profiles:employee_id(name),posts:post_id(name)')
+        .order('confirmed_at', { ascending: false })
+        .limit(80);
+
+      if (!showResolved) {
+        presenceQuery = presenceQuery.or('status.eq.pending_review,status.eq.rejected,gps_valid.eq.false,is_mock_location.eq.true,photo_url.is.null');
+      }
+
+      const { data: presenceData, error: presenceError } = await presenceQuery;
+      if (presenceError) throw presenceError;
+
       const { data: logData, error: logError } = await supabase
         .from('notification_logs')
         .select('id,channel,status,error_message,sent_at,created_at,target_user_id')
@@ -103,6 +154,7 @@ export default function AlertsCenterPage() {
       if (logError) throw logError;
 
       setAlerts((data ?? []) as AlertRow[]);
+      setPresenceAlerts((presenceData ?? []) as PresenceAlertRow[]);
       setLogs((logData ?? []) as NotificationLog[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -115,21 +167,45 @@ export default function AlertsCenterPage() {
     void load();
   }, [load]);
 
+  const unifiedAlerts = useMemo<UnifiedAlert[]>(() => {
+    const occurrenceItems: UnifiedAlert[] = alerts.map((item) => ({ kind: 'occurrence', item }));
+    const presenceItems: UnifiedAlert[] = presenceAlerts.map((item) => ({ kind: 'presence', item }));
+
+    return [...occurrenceItems, ...presenceItems].sort((a, b) => {
+      const aDate = a.kind === 'presence' ? (a.item.confirmed_at ?? a.item.created_at) : a.item.created_at;
+      const bDate = b.kind === 'presence' ? (b.item.confirmed_at ?? b.item.created_at) : b.item.created_at;
+      return new Date(bDate).getTime() - new Date(aDate).getTime();
+    });
+  }, [alerts, presenceAlerts]);
+
   const filteredAlerts = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return alerts;
+    if (!term) return unifiedAlerts;
 
-    return alerts.filter((alert) =>
-      [
-        alert.type ?? '',
-        alert.severity ?? '',
-        alert.status ?? '',
-        alert.description ?? '',
-        alert.profiles?.name ?? '',
-        alert.posts?.name ?? '',
-      ].join(' ').toLowerCase().includes(term)
-    );
-  }, [alerts, search]);
+    return unifiedAlerts.filter((entry) => {
+      if (entry.kind === 'occurrence') {
+        const alert = entry.item;
+        return [
+          alert.type ?? '',
+          alert.severity ?? '',
+          alert.status ?? '',
+          alert.description ?? '',
+          alert.profiles?.name ?? '',
+          alert.posts?.name ?? '',
+        ].join(' ').toLowerCase().includes(term);
+      }
+
+      const presence = entry.item;
+      return [
+        'assumir posto',
+        'presença',
+        presence.status ?? '',
+        presence.validation_method ?? '',
+        presence.profiles?.name ?? '',
+        presence.posts?.name ?? '',
+      ].join(' ').toLowerCase().includes(term);
+    });
+  }, [unifiedAlerts, search]);
 
   const stats = useMemo(() => {
     const criticalOpen = alerts.filter((item) =>
@@ -137,13 +213,21 @@ export default function AlertsCenterPage() {
       (item.type === 'sos' || item.severity === 'critica' || item.severity === 'alta')
     ).length;
 
+    const presenceReview = presenceAlerts.filter((item) =>
+      item.status === 'pending_review' ||
+      item.status === 'rejected' ||
+      item.gps_valid === false ||
+      item.is_mock_location === true ||
+      !item.photo_url
+    ).length;
+
     return {
-      criticalOpen,
-      openOccurrences: alerts.filter((item) => item.status !== 'resolvida').length,
+      criticalOpen: criticalOpen + presenceAlerts.filter((item) => item.is_mock_location === true).length,
+      openOccurrences: alerts.filter((item) => item.status !== 'resolvida').length + presenceReview,
       sent: logs.filter((item) => item.status === 'sent').length,
       failed: logs.filter((item) => item.status === 'failed').length,
     };
-  }, [alerts, logs]);
+  }, [alerts, presenceAlerts, logs]);
 
   async function updateStatus(id: string, status: string) {
     setError(null);
@@ -249,7 +333,7 @@ export default function AlertsCenterPage() {
 
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-black text-slate-950">Fila de alertas</h2>
+            <h2 className="text-xl font-black text-slate-950">Fila de alertas operacionais</h2>
             {loading ? <span className="text-sm font-bold text-slate-500">Carregando...</span> : null}
           </div>
 
@@ -259,48 +343,101 @@ export default function AlertsCenterPage() {
             </div>
           ) : null}
 
-          {filteredAlerts.map((alert) => (
-            <article key={alert.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${severityClass(alert.severity)}`}>
-                      {alert.severity ?? 'media'}
-                    </span>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                      {alert.status ?? 'aberta'}
-                    </span>
-                    <span className="text-xs font-semibold text-slate-500">{formatDate(alert.created_at)}</span>
-                  </div>
-                  <h3 className="text-lg font-black text-slate-950">
-                    {alert.type === 'sos' ? 'SOS acionado' : `Ocorrência: ${alert.type ?? 'outro'}`}
-                  </h3>
-                  <p className="text-sm leading-6 text-slate-600">{alert.description ?? 'Sem descrição.'}</p>
-                  <div className="grid gap-1 text-sm text-slate-500 md:grid-cols-2">
-                    <p><strong>Operador:</strong> {alert.profiles?.name ?? 'Não informado'}</p>
-                    <p><strong>Posto:</strong> {alert.posts?.name ?? 'Não informado'}</p>
-                  </div>
-                  {alert.photo_url ? (
-                    <a className="inline-flex text-sm font-bold text-blue-700 hover:underline" href={alert.photo_url} target="_blank" rel="noreferrer">
-                      Ver evidência
-                    </a>
-                  ) : null}
-                </div>
+          {filteredAlerts.map((entry) => {
+            if (entry.kind === 'presence') {
+              const presence = entry.item;
 
-                <div className="flex flex-wrap gap-2 md:min-w-56 md:justify-end">
-                  <button type="button" onClick={() => updateStatus(alert.id, 'em_andamento')} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">
-                    Em andamento
-                  </button>
-                  <button type="button" onClick={() => updateStatus(alert.id, 'resolvida')} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-                    Resolver
-                  </button>
-                  <button type="button" onClick={() => resend(alert)} disabled={sending} className="rounded-xl border border-slate-300 bg-slate-950 px-3 py-2 text-sm font-bold text-white disabled:opacity-60">
-                    Reenviar alerta
-                  </button>
+              return (
+                <article key={`presence-${presence.id}`} className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${presenceSeverityClass(presence)}`}>
+                          Assumir posto
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                          {presence.status ?? 'pendente'}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">{formatDate(presence.confirmed_at ?? presence.created_at)}</span>
+                      </div>
+
+                      <h3 className="text-lg font-black text-slate-950">
+                        {presenceReason(presence)}
+                      </h3>
+
+                      <p className="text-sm leading-6 text-slate-600">
+                        Registro de assunção de posto precisa de atenção operacional.
+                      </p>
+
+                      <div className="grid gap-1 text-sm text-slate-500 md:grid-cols-2">
+                        <p><strong>Operador:</strong> {presence.profiles?.name ?? 'Não informado'}</p>
+                        <p><strong>Posto:</strong> {presence.posts?.name ?? 'Não informado'}</p>
+                        <p><strong>GPS:</strong> {presence.gps_valid ? 'Válido' : 'Inválido/sem GPS'}</p>
+                        <p><strong>Foto:</strong> {presence.photo_url ? 'Enviada' : 'Ausente'}</p>
+                      </div>
+
+                      {presence.photo_url ? (
+                        <a className="inline-flex text-sm font-bold text-blue-700 hover:underline" href={presence.photo_url} target="_blank" rel="noreferrer">
+                          Ver foto da assunção
+                        </a>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 md:min-w-56 md:justify-end">
+                      <a href="/#/presence" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
+                        Abrir em Presenças
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              );
+            }
+
+            const alert = entry.item;
+
+            return (
+              <article key={`occurrence-${alert.id}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-xs font-bold ${severityClass(alert.severity)}`}>
+                        {alert.severity ?? 'media'}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                        {alert.status ?? 'aberta'}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">{formatDate(alert.created_at)}</span>
+                    </div>
+                    <h3 className="text-lg font-black text-slate-950">
+                      {alert.type === 'sos' ? 'SOS acionado' : `Ocorrência: ${alert.type ?? 'outro'}`}
+                    </h3>
+                    <p className="text-sm leading-6 text-slate-600">{alert.description ?? 'Sem descrição.'}</p>
+                    <div className="grid gap-1 text-sm text-slate-500 md:grid-cols-2">
+                      <p><strong>Operador:</strong> {alert.profiles?.name ?? 'Não informado'}</p>
+                      <p><strong>Posto:</strong> {alert.posts?.name ?? 'Não informado'}</p>
+                    </div>
+                    {alert.photo_url ? (
+                      <a className="inline-flex text-sm font-bold text-blue-700 hover:underline" href={alert.photo_url} target="_blank" rel="noreferrer">
+                        Ver evidência
+                      </a>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 md:min-w-56 md:justify-end">
+                    <button type="button" onClick={() => updateStatus(alert.id, 'em_andamento')} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">
+                      Em andamento
+                    </button>
+                    <button type="button" onClick={() => updateStatus(alert.id, 'resolvida')} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+                      Resolver
+                    </button>
+                    <button type="button" onClick={() => resend(alert)} disabled={sending} className="rounded-xl border border-slate-300 bg-slate-950 px-3 py-2 text-sm font-bold text-white disabled:opacity-60">
+                      Reenviar alerta
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

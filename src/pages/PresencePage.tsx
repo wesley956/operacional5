@@ -1,14 +1,27 @@
 // ============================================================
-// OPERACIONAL5 — Página de Presença
+// OPERACIONAL5 — Página de Assunções / Presenças
 // ============================================================
 
 import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees, usePosts, usePresence } from '@/hooks';
-import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
+import { formatDateTime, formatRelativeTime } from '@/lib/utils';
 import { METHOD_LABELS, type Presence, type PresenceMethod, type PresenceStatus } from '@/lib/types';
-import { MapPin, AlertTriangle, CheckCircle, Clock, XCircle, Wifi, WifiOff, QrCode, Cpu } from 'lucide-react';
+import {
+  MapPin,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Wifi,
+  WifiOff,
+  QrCode,
+  Cpu,
+  Camera,
+  ExternalLink,
+  ShieldCheck,
+} from 'lucide-react';
 
 const METHOD_ICONS: Record<PresenceMethod, React.ReactNode> = {
   gps: <Wifi className="w-4 h-4 text-green-600" />,
@@ -17,6 +30,11 @@ const METHOD_ICONS: Record<PresenceMethod, React.ReactNode> = {
   manual: <MapPin className="w-4 h-4 text-gray-600" />,
 };
 
+const STATUS_CONFIG: Record<PresenceStatus, { badge: 'success' | 'warning' | 'danger'; icon: React.ReactNode; label: string }> = {
+  valid: { badge: 'success', icon: <CheckCircle className="w-3.5 h-3.5" />, label: 'Válida' },
+  pending_review: { badge: 'warning', icon: <Clock className="w-3.5 h-3.5" />, label: 'Revisão' },
+  rejected: { badge: 'danger', icon: <XCircle className="w-3.5 h-3.5" />, label: 'Rejeitada' },
+};
 
 function makeIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -41,11 +59,26 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
-const STATUS_CONFIG: Record<PresenceStatus, { badge: 'success' | 'warning' | 'danger'; icon: React.ReactNode; label: string }> = {
-  valid: { badge: 'success', icon: <CheckCircle className="w-3.5 h-3.5" />, label: 'Válida' },
-  pending_review: { badge: 'warning', icon: <Clock className="w-3.5 h-3.5" />, label: 'Revisão' },
-  rejected: { badge: 'danger', icon: <XCircle className="w-3.5 h-3.5" />, label: 'Rejeitada' },
-};
+function hasGps(presence: Presence): boolean {
+  return typeof presence.gps_lat === 'number' && typeof presence.gps_lng === 'number';
+}
+
+function mapsUrl(presence: Presence): string | null {
+  if (!hasGps(presence)) return null;
+  return `https://www.google.com/maps?q=${presence.gps_lat},${presence.gps_lng}`;
+}
+
+function gpsBadge(presence: Presence) {
+  if (presence.is_mock_location) {
+    return <Badge variant="danger" pulse><AlertTriangle className="w-3 h-3 mr-1" /> Mock</Badge>;
+  }
+
+  if (presence.gps_valid) {
+    return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" /> Dentro do raio</Badge>;
+  }
+
+  return <Badge variant="warning"><WifiOff className="w-3 h-3 mr-1" /> Fora/fraco</Badge>;
+}
 
 export function PresencePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,20 +89,32 @@ export function PresencePage() {
   const [presenceMethod, setPresenceMethod] = useState<PresenceMethod>('manual');
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [photoFilter, setPhotoFilter] = useState<string>('');
 
   const { presences, loading, confirmPresence } = usePresence();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
   const getProfileName = (employeeId: string) => employees.find(e => e.id === employeeId)?.name ?? 'Funcionário não encontrado';
+  const getProfileEmail = (employeeId: string) => employees.find(e => e.id === employeeId)?.email ?? '';
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
+
   const filtered = presences.filter(p => {
     if (methodFilter && p.validation_method !== methodFilter) return false;
     if (statusFilter && p.status !== statusFilter) return false;
+    if (photoFilter === 'with_photo' && !p.photo_url) return false;
+    if (photoFilter === 'without_photo' && p.photo_url) return false;
     return true;
   });
 
   const selected = selectedId ? presences.find(p => p.id === selectedId) : null;
+
+  const stats = {
+    total: presences.length,
+    valid: presences.filter(p => p.status === 'valid').length,
+    review: presences.filter(p => p.status === 'pending_review').length,
+    photos: presences.filter(p => Boolean(p.photo_url)).length,
+  };
 
   const handleConfirmPresence = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -141,43 +186,39 @@ export function PresencePage() {
   const columns = [
     {
       key: 'employee',
-      header: 'Funcionário',
-      render: (_: Presence) => (
+      header: 'Operador',
+      render: (presence: Presence) => (
         <div className="flex items-center gap-2">
-          <Avatar name={getProfileName(_.employee_id)} size="sm" />
-          <span className="font-medium text-gray-900">{getProfileName(_.employee_id)}</span>
+          <Avatar name={getProfileName(presence.employee_id)} size="sm" />
+          <div>
+            <p className="font-medium text-gray-900">{getProfileName(presence.employee_id)}</p>
+            <p className="text-xs text-gray-500">{getProfileEmail(presence.employee_id) || '—'}</p>
+          </div>
         </div>
       ),
     },
     {
       key: 'post',
       header: 'Posto',
-      render: (_: Presence) => (
-        <span className="text-sm text-gray-700">{getPostName(_.post_id)}</span>
-      ),
-    },
-    {
-      key: 'method',
-      header: 'Método',
-      render: (_: Presence) => (
-        <div className="flex items-center gap-1.5 text-sm">
-          {METHOD_ICONS[_.validation_method]}
-          {METHOD_LABELS[_.validation_method]}
-        </div>
+      render: (presence: Presence) => (
+        <span className="text-sm text-gray-700">{getPostName(presence.post_id)}</span>
       ),
     },
     {
       key: 'time',
-      header: 'Horário',
-      render: (_: Presence) => (
-        <span className="text-sm text-gray-600">{formatDateTime(_.confirmed_at)}</span>
+      header: 'Assumiu em',
+      render: (presence: Presence) => (
+        <div>
+          <p className="text-sm font-medium text-gray-700">{formatDateTime(presence.confirmed_at)}</p>
+          <p className="text-xs text-gray-500">{formatRelativeTime(presence.confirmed_at)}</p>
+        </div>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (_: Presence) => {
-        const cfg = STATUS_CONFIG[_.status];
+      render: (presence: Presence) => {
+        const cfg = STATUS_CONFIG[presence.status];
         return (
           <Badge variant={cfg.badge}>
             <span className="flex items-center gap-1">
@@ -188,14 +229,27 @@ export function PresencePage() {
       },
     },
     {
-      key: 'mock',
+      key: 'gps',
       header: 'GPS',
-      render: (_: Presence) => (
-        _.is_mock_location
-          ? <Badge variant="danger" pulse><AlertTriangle className="w-3 h-3 mr-1" /> Mock</Badge>
-          : _.gps_valid
-            ? <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" /> OK</Badge>
-            : <Badge variant="warning"><WifiOff className="w-3 h-3 mr-1" /> Fraco</Badge>
+      render: (presence: Presence) => gpsBadge(presence),
+    },
+    {
+      key: 'photo',
+      header: 'Foto',
+      render: (presence: Presence) => (
+        presence.photo_url
+          ? <Badge variant="success"><Camera className="w-3 h-3 mr-1" /> Sim</Badge>
+          : <Badge variant="warning"><Camera className="w-3 h-3 mr-1" /> Não</Badge>
+      ),
+    },
+    {
+      key: 'method',
+      header: 'Método',
+      render: (presence: Presence) => (
+        <div className="flex items-center gap-1.5 text-sm">
+          {METHOD_ICONS[presence.validation_method]}
+          {METHOD_LABELS[presence.validation_method]}
+        </div>
       ),
     },
   ];
@@ -203,8 +257,8 @@ export function PresencePage() {
   return (
     <div>
       <PageHeader
-        title="Presença"
-        subtitle={loading ? 'Carregando presenças...' : `${presences.length} registros hoje`}
+        title="Assunções de posto"
+        subtitle={loading ? 'Carregando registros...' : `${presences.length} registros de presença/assunção`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => {
@@ -212,7 +266,7 @@ export function PresencePage() {
               setConfirmSuccess(null);
               setShowConfirmModal(true);
             }}>
-              <CheckCircle className="w-4 h-4 mr-1" /> Confirmar Presença
+              <CheckCircle className="w-4 h-4 mr-1" /> Registro manual
             </Button>
             <SelectField
               id="method-filter"
@@ -234,9 +288,27 @@ export function PresencePage() {
               onChange={e => setStatusFilter(e.target.value)}
               className="w-32"
             />
+            <SelectField
+              id="photo-filter"
+              placeholder="Foto"
+              options={[
+                { value: 'with_photo', label: 'Com foto' },
+                { value: 'without_photo', label: 'Sem foto' },
+              ]}
+              value={photoFilter}
+              onChange={e => setPhotoFilter(e.target.value)}
+              className="w-32"
+            />
           </div>
         }
       />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <AuditStat label="Total" value={stats.total} />
+        <AuditStat label="Válidas" value={stats.valid} tone="green" />
+        <AuditStat label="Em revisão" value={stats.review} tone="yellow" />
+        <AuditStat label="Com foto" value={stats.photos} tone="blue" />
+      </div>
 
       {confirmSuccess && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -250,18 +322,21 @@ export function PresencePage() {
           data={filtered}
           keyExtractor={p => p.id}
           onRowClick={p => setSelectedId(p.id)}
-          emptyMessage={loading ? "Carregando presenças..." : "Nenhuma presença registrada"}
+          emptyMessage={loading ? "Carregando registros..." : "Nenhuma assunção de posto registrada"}
         />
       </Card>
 
-      {/* Confirm Presence Modal */}
-      <Modal open={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirmar Presença">
+      <Modal open={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Registro manual de presença">
         <form onSubmit={handleConfirmPresence} className="space-y-4">
           {confirmError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {confirmError}
             </div>
           )}
+
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+            Use registro manual apenas para correções operacionais controladas. O fluxo normal deve ser pelo app mobile em <b>Assumir posto</b>.
+          </div>
 
           <SelectField
             id="presence-employee"
@@ -325,13 +400,13 @@ export function PresencePage() {
 
           {presenceMethod === 'manual' && (
             <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
-              Presença manual será registrada sem validação GPS. Use para correções operacionais controladas.
+              Presença manual será registrada sem validação GPS/foto. Use apenas para correção administrativa.
             </div>
           )}
 
           <div className="flex gap-2 pt-2">
             <Button type="submit" className="flex-1" loading={confirming}>
-              Confirmar Presença
+              Confirmar registro manual
             </Button>
             <Button type="button" variant="secondary" onClick={() => setShowConfirmModal(false)}>
               Cancelar
@@ -340,11 +415,10 @@ export function PresencePage() {
         </form>
       </Modal>
 
-      {/* Presence Detail Modal */}
-      <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Detalhes da Presença" size="lg">
+      <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Auditoria da assunção de posto" size="lg">
         {selected && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <Avatar name={getProfileName(selected.employee_id)} />
                 <div>
@@ -358,59 +432,93 @@ export function PresencePage() {
               })()}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
-              <DetailItem label="Método" value={METHOD_LABELS[selected.validation_method]} />
-              <DetailItem label="Data/Hora" value={formatDateTime(selected.confirmed_at)} />
-              {selected.gps_lat && selected.gps_lng && (
-                <>
-                  <DetailItem label="Latitude" value={selected.gps_lat.toFixed(6)} />
-                  <DetailItem label="Longitude" value={selected.gps_lng.toFixed(6)} />
-                </>
-              )}
-              {selected.accuracy && (
-                <DetailItem label="Acurácia" value={`${selected.accuracy}m`} />
-              )}
-              <DetailItem label="GPS Válido" value={selected.gps_valid ? 'Sim' : 'Não'} />
-              <DetailItem label="Mock Location" value={selected.is_mock_location ? '⚠️ DETECTADO' : 'Não'} />
-              {selected.photo_url && (
-                <DetailItem label="Foto" value="📷 Anexada" />
-              )}
+            <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+              <div className="flex items-center gap-2 text-blue-900 font-bold">
+                <ShieldCheck className="w-4 h-4" />
+                Registro de Assumir posto
+              </div>
+              <p className="mt-1 text-xs text-blue-700">
+                Registro criado pelo app mobile ou por correção manual. Verifique foto, GPS e status para validar a assunção.
+              </p>
             </div>
 
-            {selected.is_mock_location && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-red-800">GPS Falso Detectado</p>
-                  <p className="text-xs text-red-600">Esta presença foi marcada para revisão.</p>
-                </div>
-              </div>
-            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <DetailItem label="Horário confirmado" value={formatDateTime(selected.confirmed_at)} />
+              <DetailItem label="Relativo" value={formatRelativeTime(selected.confirmed_at)} />
+              <DetailItem label="Método" value={METHOD_LABELS[selected.validation_method]} />
+              <DetailItem label="Status" value={STATUS_CONFIG[selected.status].label} />
+              <DetailItem label="GPS válido" value={selected.gps_valid ? 'Sim' : 'Não'} />
+              <DetailItem label="Mock location" value={selected.is_mock_location ? 'Detectado' : 'Não detectado'} />
 
-            {/* Geofence Visualization */}
-            {selected.gps_lat && selected.gps_lng && (
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Localização da assunção do posto</h4>
-                <div className="bg-gray-100 rounded-lg h-32 flex items-center justify-center">
-                  <div className="text-center">
-                    <MapPin className="w-8 h-8 text-blue-600 mx-auto mb-1" />
-                    <p className="text-xs text-gray-500">
-                      {selected.gps_lat.toFixed(6)}, {selected.gps_lng.toFixed(6)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {selected.accuracy ? `±${selected.accuracy}m` : 'Sem acurácia'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+              {hasGps(selected) && (
+                <>
+                  <DetailItem label="Latitude" value={selected.gps_lat?.toFixed(6)} />
+                  <DetailItem label="Longitude" value={selected.gps_lng?.toFixed(6)} />
+                </>
+              )}
 
-            <div className="text-xs text-gray-400 space-y-0.5">
-              <p>ID: {selected.id}</p>
-              <p>Idempotency Key: {selected.idempotency_key}</p>
-              <p>Criado em: {formatRelativeTime(selected.created_at)}</p>
-              {selected.synced_at && <p>Sincronizado em: {formatDateTime(selected.synced_at)}</p>}
-              {selected.offline_created_at && <p>Offline criado em: {formatDateTime(selected.offline_created_at)}</p>}
+              {selected.accuracy ? (
+                <DetailItem label="Precisão" value={`${Math.round(selected.accuracy)}m`} />
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <div className="space-y-3">
+                  <h4 className="font-bold text-gray-900">GPS</h4>
+                  <div>{gpsBadge(selected)}</div>
+
+                  {hasGps(selected) ? (
+                    <>
+                      <p className="text-sm text-gray-600">
+                        {selected.gps_lat?.toFixed(6)}, {selected.gps_lng?.toFixed(6)}
+                        {selected.accuracy ? ` · ±${Math.round(selected.accuracy)}m` : ''}
+                      </p>
+
+                      {mapsUrl(selected) ? (
+                        <a
+                          href={mapsUrl(selected) ?? '#'}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:underline"
+                        >
+                          Abrir no mapa <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Sem coordenadas registradas.</p>
+                  )}
+                </div>
+              </Card>
+
+              <Card>
+                <div className="space-y-3">
+                  <h4 className="font-bold text-gray-900">Foto de evidência</h4>
+
+                  {selected.photo_url ? (
+                    <>
+                      <a href={selected.photo_url} target="_blank" rel="noreferrer">
+                        <img
+                          src={selected.photo_url}
+                          alt="Evidência da assunção do posto"
+                          className="h-56 w-full rounded-xl object-cover border border-gray-200"
+                        />
+                      </a>
+                      <a
+                        href={selected.photo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:underline"
+                      >
+                        Abrir foto em nova aba <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Sem foto registrada neste lançamento.</p>
+                  )}
+                </div>
+              </Card>
             </div>
           </div>
         )}
@@ -419,11 +527,27 @@ export function PresencePage() {
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
+function AuditStat({ label, value, tone = 'gray' }: { label: string; value: number; tone?: 'gray' | 'green' | 'yellow' | 'blue' }) {
+  const tones = {
+    gray: 'border-gray-200 bg-white text-gray-900',
+    green: 'border-green-200 bg-green-50 text-green-900',
+    yellow: 'border-yellow-200 bg-yellow-50 text-yellow-900',
+    blue: 'border-blue-200 bg-blue-50 text-blue-900',
+  };
+
   return (
-    <div>
+    <div className={`rounded-xl border p-4 ${tones[tone]}`}>
+      <p className="text-xs font-bold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="mt-1 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="rounded-lg bg-gray-50 p-3">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={cn('text-sm font-medium', value.includes('DETECTADO') ? 'text-red-600' : 'text-gray-900')}>{value}</p>
+      <p className="font-medium text-gray-900">{value ?? '—'}</p>
     </div>
   );
 }

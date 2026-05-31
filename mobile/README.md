@@ -167,3 +167,22 @@ Fluxo recomendado:
 4. Definir PIN opcional.
 5. No app mobile → Assumir posto.
 6. Funcionário informa código/PIN, tira foto e confirma GPS.
+
+## Fase 11C — Auditoria web de Assumir posto
+
+O painel web de Presença passa a funcionar como auditoria das assunções de posto:
+
+- operador validado;
+- posto;
+- horário;
+- status;
+- GPS válido/fora do raio/mock;
+- precisão;
+- foto de evidência;
+- link para abrir foto;
+- link para abrir coordenadas no mapa.
+
+O fluxo recomendado é:
+1. App mobile → Assumir posto.
+2. Web → Presença/Assunções de posto.
+3. Conferir registro, foto e GPS.

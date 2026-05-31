@@ -14,6 +14,18 @@ function json(body: unknown, status = 200) {
   });
 }
 
+
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 function normalizeCode(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.trim().toUpperCase();
@@ -34,11 +46,11 @@ serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
     if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-      return json({ ok: false, error: 'Configuração Supabase ausente.' }, 500);
+      return json({ ok: false, error: 'Configuração Supabase ausente.' });
     }
 
     const authorization = req.headers.get('Authorization');
-    if (!authorization) return json({ ok: false, error: 'Authorization header obrigatório.' }, 401);
+    if (!authorization) return json({ ok: false, error: 'Authorization header obrigatório.' });
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authorization } },
@@ -47,7 +59,7 @@ serve(async (req) => {
 
     const { data: userData, error: userError } = await callerClient.auth.getUser();
     if (userError || !userData.user) {
-      return json({ ok: false, error: 'Token inválido ou expirado.' }, 401);
+      return json({ ok: false, error: 'Token inválido ou expirado.' });
     }
 
     const { data: platformAdmin } = await adminClient
@@ -70,7 +82,7 @@ serve(async (req) => {
     const isPlatformAdmin = Boolean(platformAdmin);
 
     if (!isPlatformAdmin && (!callerProfile || !allowedRoles.has(String(callerProfile.role)))) {
-      return json({ ok: false, error: 'Você não tem permissão para alterar código/PIN de campo.' }, 403);
+      return json({ ok: false, error: 'Você não tem permissão para alterar código/PIN de campo.' });
     }
 
     const body = await req.json();
@@ -78,10 +90,10 @@ serve(async (req) => {
     const fieldCode = normalizeCode(body.field_code);
     const pin = normalizePin(body.pin);
 
-    if (!employeeId) return json({ ok: false, error: 'Funcionário obrigatório.' }, 400);
-    if (!fieldCode) return json({ ok: false, error: 'Código/matrícula obrigatório.' }, 400);
-    if (fieldCode.length < 2) return json({ ok: false, error: 'Código/matrícula muito curto.' }, 400);
-    if (pin && pin.length < 4) return json({ ok: false, error: 'PIN deve ter pelo menos 4 caracteres.' }, 400);
+    if (!employeeId) return json({ ok: false, error: 'Funcionário obrigatório.' });
+    if (!fieldCode) return json({ ok: false, error: 'Código/matrícula obrigatório.' });
+    if (fieldCode.length < 2) return json({ ok: false, error: 'Código/matrícula muito curto.' });
+    if (pin && pin.length < 4) return json({ ok: false, error: 'PIN deve ter pelo menos 4 caracteres.' });
 
     const { data: employee, error: employeeError } = await adminClient
       .from('profiles')
@@ -90,10 +102,10 @@ serve(async (req) => {
       .maybeSingle();
 
     if (employeeError) throw employeeError;
-    if (!employee) return json({ ok: false, error: 'Funcionário não encontrado.' }, 404);
+    if (!employee) return json({ ok: false, error: 'Funcionário não encontrado.' });
 
     if (!isPlatformAdmin && employee.company_id !== callerProfile?.company_id) {
-      return json({ ok: false, error: 'Funcionário pertence a outra empresa.' }, 403);
+      return json({ ok: false, error: 'Funcionário pertence a outra empresa.' });
     }
 
     const { data: duplicate, error: duplicateError } = await adminClient
@@ -106,7 +118,7 @@ serve(async (req) => {
 
     if (duplicateError) throw duplicateError;
     if (duplicate) {
-      return json({ ok: false, error: 'Este código/matrícula já está em uso nesta empresa.' }, 409);
+      return json({ ok: false, error: 'Este código/matrícula já está em uso nesta empresa.' });
     }
 
     const { data: updated, error: updateError } = await adminClient
@@ -139,6 +151,6 @@ serve(async (req) => {
       pin_updated: pinUpdated,
     });
   } catch (err) {
-    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+    return json({ ok: false, error: formatError(err) });
   }
 });

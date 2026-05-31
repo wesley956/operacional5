@@ -146,7 +146,7 @@ export async function confirmPresence(params: {
   profile: MobileProfile;
   employee?: MobileEmployeeOption | null;
   schedule: MobileSchedule;
-  location: LocationResult;
+  location?: LocationResult | null;
   gpsValid: boolean;
   photoUrl?: string | null;
   validationMethod?: 'gps' | 'qr' | 'nfc' | 'manual';
@@ -159,14 +159,14 @@ export async function confirmPresence(params: {
     schedule_id: params.schedule.id,
     employee_id: employeeId,
     post_id: params.schedule.post.id,
-    gps_lat: params.location.lat,
-    gps_lng: params.location.lng,
-    gps_valid: params.gpsValid,
-    accuracy: params.location.accuracy,
+    gps_lat: params.location?.lat ?? null,
+    gps_lng: params.location?.lng ?? null,
+    gps_valid: Boolean(params.location) && params.gpsValid,
+    accuracy: params.location?.accuracy ?? null,
     validation_method: params.validationMethod ?? 'gps',
     photo_url: params.photoUrl ?? null,
-    is_mock_location: params.location.isMock,
-    status: params.gpsValid && !params.location.isMock ? 'valid' : 'pending_review',
+    is_mock_location: params.location?.isMock ?? false,
+    status: params.location && params.gpsValid && !params.location.isMock ? 'valid' : 'pending_review',
     offline_created_at: createdAt,
     device_info: { source: 'mobile', app: 'operacional5' },
     idempotency_key: idempotencyKey,

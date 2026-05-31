@@ -116,11 +116,6 @@ export function CheckInScreen() {
       return;
     }
 
-    if (!location) {
-      setError('Atualize a localização antes de confirmar.');
-      return;
-    }
-
     if (!photo) {
       setError('A foto é obrigatória para assumir o posto.');
       return;
@@ -142,11 +137,17 @@ export function CheckInScreen() {
         employee: validatedEmployee,
         schedule: selected,
         location,
-        gpsValid,
+        gpsValid: location ? gpsValid : false,
         photoUrl,
       });
 
-      setMessage(result.queued ? 'Assunção de posto salva offline para sincronização.' : `Posto assumido por ${validatedEmployee.name}. Status: ${result.status ?? 'valid'}`);
+      if (result.queued) {
+        setMessage('Assunção de posto salva offline para sincronização.');
+      } else if (!location) {
+        setMessage(`Posto assumido por ${validatedEmployee.name}, mas enviado para revisão por falta de GPS.`);
+      } else {
+        setMessage(`Posto assumido por ${validatedEmployee.name}. Status: ${result.status ?? 'valid'}`);
+      }
       setPhoto(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -227,7 +228,11 @@ export function CheckInScreen() {
           <Text style={styles.locationText}>Geofence: {gpsValid ? 'válido' : 'fora do raio'}</Text>
           <Text style={styles.locationText}>Mock location: {location.isMock ? 'suspeito' : 'não detectado'}</Text>
         </View>
-      ) : null}
+      ) : (
+        <View style={styles.locationBox}>
+          <Text style={styles.locationText}>Sem GPS: o registro ficará em revisão no painel.</Text>
+        </View>
+      )}
 
       <View style={styles.photoCard}>
         <Text style={styles.label}>Foto obrigatória</Text>
@@ -241,11 +246,17 @@ export function CheckInScreen() {
       </View>
 
       <Pressable
-        disabled={!validatedEmployee || !selected || !location || !photo || submitting}
-        style={[styles.primaryButton, (!validatedEmployee || !selected || !location || !photo || submitting) && styles.disabled]}
+        disabled={!validatedEmployee || !selected || !photo || submitting}
+        style={[styles.primaryButton, (!validatedEmployee || !selected || !photo || submitting) && styles.disabled]}
         onPress={submit}
       >
-        {submitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Confirmar assunção do posto</Text>}
+        {submitting ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.primaryButtonText}>
+            {location ? 'Confirmar assunção do posto' : 'Confirmar em revisão sem GPS'}
+          </Text>
+        )}
       </Pressable>
 
       <Pressable onPress={() => router.back()} style={styles.backButton}>

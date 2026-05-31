@@ -154,3 +154,16 @@ A tela Assumir posto agora segue o modelo de aparelho fixo da empresa no posto:
 6. O registro de presença é criado em nome do operador validado, não necessariamente em nome do usuário logado no aparelho.
 
 Isso aproxima o app do cenário em que o celular fica no posto e não no celular pessoal do funcionário.
+
+## Fase 11B — Código/Matrícula e PIN pelo painel web
+
+O painel web de Funcionários agora permite editar o código/matrícula de campo e definir um novo PIN para cada funcionário.
+
+Fluxo recomendado:
+
+1. Web → Funcionários.
+2. Abrir detalhes do funcionário.
+3. Definir Código/Matrícula, por exemplo `1001` ou `JOAO01`.
+4. Definir PIN opcional.
+5. No app mobile → Assumir posto.
+6. Funcionário informa código/PIN, tira foto e confirma GPS.

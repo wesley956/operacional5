@@ -2,12 +2,13 @@
 // OPERACIONAL5 — Página de Funcionários
 // ============================================================
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees } from '@/hooks';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { ROLE_LABELS, type Role, type Profile } from '@/lib/types';
-import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX } from 'lucide-react';
+import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX, KeyRound, Save } from 'lucide-react';
 
 const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'default'> = {
   admin: 'danger',
@@ -18,6 +19,11 @@ const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'def
   operador: 'default',
 };
 
+type FieldAccessProfile = Profile & {
+  field_code?: string | null;
+  field_code_updated_at?: string | null;
+};
+
 export function EmployeesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -26,9 +32,30 @@ export function EmployeesPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
-  const { employees, loading, createEmployee } = useEmployees({ active: true });
+  const [fieldCode, setFieldCode] = useState('');
+  const [fieldPin, setFieldPin] = useState('');
+  const [fieldSaving, setFieldSaving] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [fieldSuccess, setFieldSuccess] = useState<string | null>(null);
+
+  const { employees, loading, refresh, createEmployee } = useEmployees({ active: true });
   const filtered = roleFilter ? employees.filter(e => e.role === roleFilter) : employees;
-  const selected = selectedId ? employees.find(e => e.id === selectedId) : null;
+  const selected = selectedId ? employees.find(e => e.id === selectedId) as FieldAccessProfile | undefined : null;
+
+  useEffect(() => {
+    if (!selected) {
+      setFieldCode('');
+      setFieldPin('');
+      setFieldError(null);
+      setFieldSuccess(null);
+      return;
+    }
+
+    setFieldCode(selected.field_code ?? '');
+    setFieldPin('');
+    setFieldError(null);
+    setFieldSuccess(null);
+  }, [selected?.id, selected?.field_code]);
 
   const handleCreateEmployee = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -74,6 +101,46 @@ export function EmployeesPage() {
     }
   };
 
+  async function handleSaveFieldAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selected) return;
+
+    setFieldSaving(true);
+    setFieldError(null);
+    setFieldSuccess(null);
+
+    try {
+      const normalizedCode = fieldCode.trim().toUpperCase();
+      const normalizedPin = fieldPin.trim();
+
+      if (!normalizedCode) throw new Error('Informe o código/matrícula de campo.');
+      if (normalizedPin && normalizedPin.length < 4) throw new Error('PIN deve ter pelo menos 4 caracteres.');
+
+      const supabase = getSupabaseClient();
+
+      const { data, error } = await supabase.functions.invoke('update-employee-field-access', {
+        body: {
+          employee_id: selected.id,
+          field_code: normalizedCode,
+          pin: normalizedPin || undefined,
+        },
+      });
+
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error ?? 'Não foi possível atualizar o acesso de campo.');
+
+      setFieldCode(normalizedCode);
+      setFieldPin('');
+      setFieldSuccess(data.pin_updated ? 'Código e PIN atualizados com sucesso.' : 'Código atualizado com sucesso.');
+      await refresh();
+    } catch (error) {
+      setFieldError(error instanceof Error ? error.message : 'Erro ao salvar acesso de campo.');
+    } finally {
+      setFieldSaving(false);
+    }
+  }
+
   const columns = [
     {
       key: 'name_full',
@@ -94,6 +161,18 @@ export function EmployeesPage() {
       render: (p: Profile) => (
         <Badge variant={ROLE_BADGES[p.role]}>{ROLE_LABELS[p.role]}</Badge>
       ),
+    },
+    {
+      key: 'field_code',
+      header: 'Código campo',
+      render: (p: Profile) => {
+        const profile = p as FieldAccessProfile;
+        return (
+          <span className="text-sm font-semibold text-blue-700">
+            {profile.field_code || '—'}
+          </span>
+        );
+      },
     },
     {
       key: 'phone',
@@ -173,10 +252,9 @@ export function EmployeesPage() {
         />
       </Card>
 
-      {/* Employee Details Modal */}
       <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Detalhes do Funcionário">
         {selected && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex items-center gap-4">
               <Avatar name={selected.name} size="lg" />
               <div>
@@ -190,7 +268,56 @@ export function EmployeesPage() {
               <DetailRow icon={<Phone className="w-4 h-4 text-gray-400" />} label="Telefone" value={selected.phone} />
               <DetailRow icon={<MapPin className="w-4 h-4 text-gray-400" />} label="Regime" value={selected.regime_trabalho} />
               <DetailRow icon={<Users className="w-4 h-4 text-gray-400" />} label="FT Disponível" value={selected.ft_available ? 'Sim' : 'Não'} />
+              <DetailRow icon={<KeyRound className="w-4 h-4 text-gray-400" />} label="Código de campo" value={selected.field_code ?? '—'} />
             </div>
+
+            <form onSubmit={handleSaveFieldAccess} className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
+              <div>
+                <h4 className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                  <KeyRound className="w-4 h-4" />
+                  Acesso no aparelho do posto
+                </h4>
+                <p className="mt-1 text-xs text-blue-700">
+                  Este código/matrícula é usado no app mobile para Assumir posto. O PIN é opcional, mas recomendado.
+                </p>
+              </div>
+
+              {fieldError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {fieldError}
+                </div>
+              )}
+
+              {fieldSuccess && (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                  {fieldSuccess}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  id="field-code"
+                  label="Código/Matrícula"
+                  value={fieldCode}
+                  onChange={event => setFieldCode(event.target.value.toUpperCase())}
+                  placeholder="Ex: 1001 ou JOAO01"
+                />
+
+                <Input
+                  id="field-pin"
+                  label="Novo PIN"
+                  type="password"
+                  value={fieldPin}
+                  onChange={event => setFieldPin(event.target.value)}
+                  placeholder="Opcional, mínimo 4 dígitos"
+                />
+              </div>
+
+              <Button type="submit" loading={fieldSaving}>
+                <Save className="w-4 h-4 mr-1" />
+                Salvar acesso de campo
+              </Button>
+            </form>
 
             <div className="flex gap-2 pt-2">
               <Button variant="secondary" className="flex-1">
@@ -204,7 +331,6 @@ export function EmployeesPage() {
         )}
       </Modal>
 
-      {/* New Employee Modal */}
       <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title="Novo Funcionário">
         <form onSubmit={handleCreateEmployee} className="space-y-4">
           {createError && (
@@ -267,7 +393,7 @@ export function EmployeesPage() {
   );
 }
 
-function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string }) {
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string | null }) {
   return (
     <div className="flex items-center gap-2">
       {icon}

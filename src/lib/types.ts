@@ -27,6 +27,8 @@ export interface Company {
   logo_url?: string;
   phone?: string;
   email?: string;
+  field_code?: string | null;
+  field_code_updated_at?: string | null;
   address?: string;
   active: boolean;
   created_at: string;

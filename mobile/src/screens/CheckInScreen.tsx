@@ -12,6 +12,25 @@ import {
 import { captureEvidencePhoto, uploadEvidencePhoto, type EvidenceAsset } from '../services/evidence';
 import { getCurrentLocation, isWithinGeofence, type LocationResult } from '../services/location';
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} demorou demais. Verifique internet/permissões e tente novamente.`));
+    }, ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+
 export function CheckInScreen() {
   const { profile } = useAuth();
   const [fieldCode, setFieldCode] = useState('');
@@ -126,20 +145,32 @@ export function CheckInScreen() {
     setMessage(null);
 
     try {
-      const photoUrl = await uploadEvidencePhoto({
-        companyId: profile.company_id,
-        asset: photo,
-        prefix: 'presence',
-      });
+      setMessage('Enviando foto de evidência...');
 
-      const result = await confirmPresence({
-        profile,
-        employee: validatedEmployee,
-        schedule: selected,
-        location,
-        gpsValid: location ? gpsValid : false,
-        photoUrl,
-      });
+      const photoUrl = await withTimeout(
+        uploadEvidencePhoto({
+          companyId: profile.company_id,
+          asset: photo,
+          prefix: 'presence',
+        }),
+        25000,
+        'Upload da foto'
+      );
+
+      setMessage('Registrando assunção do posto...');
+
+      const result = await withTimeout(
+        confirmPresence({
+          profile,
+          employee: validatedEmployee,
+          schedule: selected,
+          location,
+          gpsValid: location ? gpsValid : false,
+          photoUrl,
+        }),
+        25000,
+        'Registro da assunção'
+      );
 
       if (result.queued) {
         setMessage('Assunção de posto salva offline para sincronização.');

@@ -9,8 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Building2, Users, MapPin, FileWarning,
   Siren, CalendarDays, Settings, Shield, Menu, X, LogOut,
-  Bell, ChevronRight, User,
-} from 'lucide-react';
+  Bell, ChevronRight, User, AlertTriangle } from 'lucide-react';
 import { useNotifications, useRealtimeDashboard } from '@/hooks';
 import { ROLE_LABELS } from '@/lib/types';
 
@@ -35,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/schedules', label: 'Escalas', icon: <CalendarDays className="w-5 h-5" />, permission: p => p.canManageSchedules },
   { path: '/reports', label: 'Relatórios', icon: <FileWarning className="w-5 h-5" />, permission: p => p.canViewAudit },
   { path: '/notifications', label: 'Notificações', icon: <Bell className="w-5 h-5" /> },
+  { path: '/alerts', label: 'Alertas', icon: <AlertTriangle className="w-5 h-5" /> },
   { path: '/client-portal', label: 'Portal Cliente', icon: <User className="w-5 h-5" /> },
   { path: '/settings', label: 'Configurações', icon: <Settings className="w-5 h-5" />, permission: p => p.canManageSettings },
   { path: '/admin', label: 'Administração', icon: <Shield className="w-5 h-5" />, permission: p => p.canAccessAdmin },

@@ -7,6 +7,8 @@ import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField }
 import { Avatar } from '@/components/Layout';
 import { useEmployees, usePosts, usePresence } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
+import { getSupabaseClient } from '@/lib/supabase/client';
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@/lib/env';
 import { METHOD_LABELS, type Presence, type PresenceMethod, type PresenceStatus } from '@/lib/types';
 import {
   MapPin,
@@ -90,6 +92,9 @@ export function PresencePage() {
   const [methodFilter, setMethodFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [photoFilter, setPhotoFilter] = useState<string>('');
+  const [reviewSaving, setReviewSaving] = useState<'valid' | 'rejected' | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
 
   const { presences, loading, confirmPresence } = usePresence();
   const { employees } = useEmployees({ active: true });
@@ -182,6 +187,56 @@ export function PresencePage() {
       setConfirming(false);
     }
   };
+
+  async function handleReviewPresence(nextStatus: 'valid' | 'rejected') {
+    if (!selected) return;
+
+    setReviewSaving(nextStatus);
+    setReviewError(null);
+    setReviewSuccess(null);
+
+    try {
+      const supabase = getSupabaseClient();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) throw new Error(sessionError.message);
+
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/review-presence-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          presence_id: selected.id,
+          status: nextStatus,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.ok) {
+        const message = typeof data?.error === 'string'
+          ? data.error
+          : `Falha ao revisar assunção. Status HTTP ${response.status}`;
+        throw new Error(message);
+      }
+
+      setReviewSuccess(data.message ?? 'Revisão salva com sucesso.');
+      setSelectedId(null);
+      window.setTimeout(() => window.location.reload(), 600);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Erro ao revisar assunção.');
+    } finally {
+      setReviewSaving(null);
+    }
+  }
 
   const columns = [
     {
@@ -322,6 +377,18 @@ export function PresencePage() {
         </div>
       )}
 
+      {reviewSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {reviewSuccess}
+        </div>
+      )}
+
+      {reviewError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {reviewError}
+        </div>
+      )}
+
       <Card padding={false}>
         <DataTable
           columns={columns}
@@ -447,6 +514,37 @@ export function PresencePage() {
                 Registro criado pelo app mobile ou por correção manual. Verifique foto, GPS e status para validar a assunção.
               </p>
             </div>
+
+            {selected.status === 'pending_review' && (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                <h4 className="font-bold text-yellow-900">Decisão de revisão</h4>
+                <p className="mt-1 text-sm text-yellow-800">
+                  Este registro precisa de análise porque foi enviado sem GPS válido, fora do raio ou com possível inconsistência.
+                </p>
+
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    disabled={reviewSaving !== null}
+                    onClick={() => void handleReviewPresence('valid')}
+                    className="inline-flex flex-1 items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    {reviewSaving === 'valid' ? 'Aprovando...' : 'Aprovar assunção'}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={reviewSaving !== null}
+                    onClick={() => void handleReviewPresence('rejected')}
+                    className="inline-flex flex-1 items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <XCircle className="mr-2 h-4 w-4" />
+                    {reviewSaving === 'rejected' ? 'Rejeitando...' : 'Rejeitar assunção'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <DetailItem label="Horário confirmado" value={formatDateTime(selected.confirmed_at)} />

@@ -209,3 +209,14 @@ Isso evita depender do usuário logado no aparelho e permite exibir:
 - passagens de plantão da empresa;
 - foto/GPS/status;
 - eventos recentes visíveis para o tenant.
+
+## Fase 11F — Revisão web de assunção de posto
+
+O painel web permite revisar registros de Assumir posto em `pending_review`.
+
+Fluxo:
+1. App registra assunção sem GPS válido ou fora do raio.
+2. Web → Presença / Assunções de posto.
+3. Abrir registro em revisão.
+4. Conferir foto, GPS e operador.
+5. Aprovar ou rejeitar a assunção.

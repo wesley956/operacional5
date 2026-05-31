@@ -449,28 +449,24 @@ export async function getRecentMobileHistory(profile: MobileProfile): Promise<Mo
     supabase
       .from('presences')
       .select('id,employee_id,post_id,status,confirmed_at,created_at,gps_lat,gps_lng,gps_valid,accuracy,validation_method,photo_url,is_mock_location,posts:post_id(name),profiles:employee_id(name)')
-      .eq('employee_id', profile.id)
       .order('confirmed_at', { ascending: false })
       .limit(20),
 
     supabase
       .from('occurrences')
       .select('id,type,severity,status,description,created_at,photo_url,gps_lat,gps_lng,posts:post_id(name)')
-      .eq('employee_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(10),
 
     supabase
       .from('ronda_logs')
       .select('id,status,created_at,confirmed_at,gps_lat,gps_lng,photo_url,posts:post_id(name)')
-      .eq('employee_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(10),
 
     supabase
       .from('shift_handovers')
       .select('id,status,created_at,notes,incoming_photo_url,gps_lat,gps_lng,posts:post_id(name)')
-      .or(`outgoing_employee_id.eq.${profile.id},incoming_employee_id.eq.${profile.id}`)
       .order('created_at', { ascending: false })
       .limit(10),
   ]);

@@ -8,7 +8,7 @@
 export type AppEnv = 'local' | 'development' | 'staging' | 'production';
 
 export const APP_ENV: AppEnv = (import.meta.env.VITE_APP_ENV ?? 'local') as AppEnv;
-export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
 export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';

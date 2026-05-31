@@ -2,57 +2,23 @@
 // OPERACIONAL5 — Página de Login
 // ============================================================
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Card } from '@/components/ui';
-import { useEmployees } from '@/hooks';
-import { ROLE_LABELS, type Role } from '@/lib/types';
 import { Shield, Eye, EyeOff, LogIn } from 'lucide-react';
 
-const ROLE_COLORS: Record<Role, string> = {
-  gerente: 'bg-blue-600 hover:bg-blue-700 text-white',
-  supervisor: 'bg-purple-600 hover:bg-purple-700 text-white',
-  lider: 'bg-teal-600 hover:bg-teal-700 text-white',
-  operador: 'bg-green-600 hover:bg-green-700 text-white',
-  diretor: 'bg-amber-600 hover:bg-amber-700 text-white',
-  admin: 'bg-gray-800 hover:bg-gray-900 text-white',
-};
-
 export function LoginPage() {
-  const { login, loginDemo, isAuthenticated, isLoading } = useAuth();
-  const { employees } = useEmployees({ active: true });
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [status, setStatus] = useState('');
-
-  const demoUsers = employees.filter(user => user.role in ROLE_COLORS);
-
-  useEffect(() => {
-    const blockSubmit = (event: SubmitEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setStatus('Submit nativo bloqueado. Use o botão Entrar.');
-    };
-
-    document.addEventListener('submit', blockSubmit, true);
-    return () => document.removeEventListener('submit', blockSubmit, true);
-  }, []);
-
-  useEffect(() => {
-    if (isAuthenticated && !isLoading) {
-      setStatus('Sessão autenticada pelo contexto.');
-    }
-  }, [isAuthenticated, isLoading]);
 
   async function handleLogin() {
-
     setLoading(true);
     setError('');
-    setStatus('Tentando autenticar...');
 
     try {
       const normalizedEmail = email.trim();
@@ -66,33 +32,9 @@ export function LoginPage() {
       }
 
       await login(normalizedEmail, password);
-
-      setStatus('Login aprovado. Redirecionando...');
-
-      // O AuthProvider troca a tela quando isAuthenticated vira true.
+      window.location.hash = '/';
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao entrar.';
-      setError(message);
-      setStatus(`Falha no login: ${message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDemoLogin(role: Role) {
-    setLoading(true);
-    setError('');
-    setStatus('Entrando em modo demo...');
-
-    try {
-      await loginDemo(role);
-      setStatus('Login demo aprovado. Redirecionando...');
-
-      // O AuthProvider troca a tela quando isAuthenticated vira true.
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao entrar no demo.';
-      setError(message);
-      setStatus(`Falha no demo: ${message}`);
+      setError(err instanceof Error ? err.message : 'Erro ao entrar.');
     } finally {
       setLoading(false);
     }
@@ -109,22 +51,12 @@ export function LoginPage() {
           <p className="text-sm text-gray-400 mt-1">Sistema de Gestão de Segurança Privada</p>
         </div>
 
-        <div className="mb-4 rounded-xl bg-red-600 p-3 text-center text-sm font-black text-white">
-          LOGIN NOVO CARREGADO — TESTE VISUAL
-        </div>
-
         <Card className="mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Entrar no sistema</h2>
 
           {error ? (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
-            </div>
-          ) : null}
-
-          {status ? (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
-              Status: {status}
             </div>
           ) : null}
 
@@ -141,6 +73,9 @@ export function LoginPage() {
                 placeholder="seu@email.com"
                 value={email}
                 onChange={event => setEmail(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') void handleLogin();
+                }}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
@@ -158,6 +93,9 @@ export function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={event => setPassword(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') void handleLogin();
+                  }}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
                 <button
@@ -180,28 +118,6 @@ export function LoginPage() {
               <LogIn className="w-4 h-4 mr-2" />
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Modo Demo</h3>
-            <p className="text-xs text-gray-500">Clique para entrar como um perfil de demonstração</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {demoUsers.map(user => (
-              <button
-                key={user.id}
-                type="button"
-                disabled={loading}
-                onClick={() => void handleDemoLogin(user.role)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-lg text-xs font-medium transition-all disabled:opacity-60 ${ROLE_COLORS[user.role]}`}
-              >
-                <span className="font-bold">{user.name.split(' ')[0]}</span>
-                <span className="opacity-80">{ROLE_LABELS[user.role]}</span>
-              </button>
-            ))}
           </div>
         </Card>
 

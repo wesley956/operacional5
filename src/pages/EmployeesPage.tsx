@@ -10,6 +10,19 @@ import { getSupabaseClient } from '@/lib/supabase/client';
 import { ROLE_LABELS, type Role, type Profile } from '@/lib/types';
 import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX, KeyRound, Save } from 'lucide-react';
 
+
+function formatUnknownError(value: unknown): string {
+  if (!value) return 'Erro desconhecido.';
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'string') return value;
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'default'> = {
   admin: 'danger',
   diretor: 'warning',
@@ -135,7 +148,7 @@ export function EmployeesPage() {
       setFieldSuccess(data.pin_updated ? 'Código e PIN atualizados com sucesso.' : 'Código atualizado com sucesso.');
       await refresh();
     } catch (error) {
-      setFieldError(error instanceof Error ? error.message : 'Erro ao salvar acesso de campo.');
+      setFieldError(formatUnknownError(error));
     } finally {
       setFieldSaving(false);
     }

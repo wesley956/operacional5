@@ -186,3 +186,16 @@ O fluxo recomendado é:
 1. App mobile → Assumir posto.
 2. Web → Presença/Assunções de posto.
 3. Conferir registro, foto e GPS.
+
+## Fase 11D — Histórico mobile do aparelho do posto
+
+A tela Histórico do app mobile passa a destacar o uso real do aparelho fixo no posto:
+
+- últimos registros de Assumir posto;
+- status válido/revisão/rejeitado;
+- GPS válido, fora do raio ou suspeito;
+- precisão do GPS;
+- foto enviada;
+- abertura da foto;
+- abertura das coordenadas no mapa;
+- fila offline pendente/falha/sincronizada.

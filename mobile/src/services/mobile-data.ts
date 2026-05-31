@@ -314,167 +314,260 @@ export interface MobileEmployeeOption {
   active: boolean;
 }
 
-export interface MobileHistoryEvent {
-  id: string;
-  title: string;
-  description: string;
-  created_at: string;
-  kind: 'presence' | 'occurrence' | 'ronda' | 'handover';
-  status: string;
-}
-
-export async function getCompanyEmployees(profile: MobileProfile): Promise<MobileEmployeeOption[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id,name,email,role,active')
-    .eq('company_id', profile.company_id)
-    .eq('active', true)
-    .in('role', ['operador', 'lider', 'supervisor'])
-    .neq('id', profile.id)
-    .order('name', { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []) as MobileEmployeeOption[];
-}
 
 export async function createShiftHandover(params: {
   profile: MobileProfile;
   schedule: MobileSchedule;
-  incomingEmployeeId: string;
+  incomingEmployee?: MobileEmployeeOption | null;
+  incomingEmployeeId?: string;
   notes: string;
-  pendingItems: string[];
+  pendingItems?: string | string[];
   retentionReason?: string | null;
+  photoUrl?: string | null;
   incomingPhotoUrl?: string | null;
   gpsLat?: number | null;
   gpsLng?: number | null;
+  gpsAccuracy?: number | null;
   gpsValid?: boolean | null;
+  isMockLocation?: boolean | null;
+  location?: {
+    lat: number;
+    lng: number;
+    accuracy: number;
+    isMock?: boolean;
+  } | null;
 }): Promise<MobileMutationResult> {
+  const incomingEmployeeId = params.incomingEmployeeId ?? params.incomingEmployee?.id;
+
+  if (!incomingEmployeeId) {
+    throw new Error('Funcionário que vai assumir o plantão não informado.');
+  }
+
+  const idempotencyKey = `handover:${params.profile.id}:${incomingEmployeeId}:${params.schedule.id}:${todayKey()}`;
   const createdAt = new Date().toISOString();
-  const idempotencyKey = `handover:${params.profile.id}:${params.schedule.id}:${Date.now()}`;
+  const pendingItemsText = Array.isArray(params.pendingItems)
+    ? params.pendingItems.filter(Boolean).join('\n')
+    : params.pendingItems ?? null;
+  const retentionReasonText = params.retentionReason?.trim() || null;
+  const handoverPhotoUrl = params.incomingPhotoUrl ?? params.photoUrl ?? null;
+  const gpsLat = params.gpsLat ?? params.location?.lat ?? null;
+  const gpsLng = params.gpsLng ?? params.location?.lng ?? null;
+  const gpsAccuracy = params.gpsAccuracy ?? params.location?.accuracy ?? null;
+  const isMockLocation = params.isMockLocation ?? params.location?.isMock ?? false;
+  const gpsValid = params.gpsValid ?? null;
 
   const payload = {
+    company_id: params.profile.company_id,
+    schedule_id: params.schedule.id,
     post_id: params.schedule.post.id,
     outgoing_employee_id: params.profile.id,
-    incoming_employee_id: params.incomingEmployeeId,
-    status: params.retentionReason ? 'retido' : 'confirmada',
-    notes: params.notes || null,
-    pending_items: params.pendingItems,
-    retention_reason: params.retentionReason || null,
-    confirmed_at: createdAt,
-    incoming_photo_url: params.incomingPhotoUrl || null,
-    gps_lat: params.gpsLat ?? null,
-    gps_lng: params.gpsLng ?? null,
-    gps_valid: Boolean(params.gpsValid),
-    device_info: { source: 'mobile_handover_identity' },
+    incoming_employee_id: incomingEmployeeId,
+    notes: params.notes,
+    pending_items: pendingItemsText,
+    retention_reason: retentionReasonText,
+    status: 'completed',
+    incoming_photo_url: handoverPhotoUrl,
+    gps_lat: gpsLat,
+    gps_lng: gpsLng,
+    gps_accuracy: gpsAccuracy,
+    gps_valid: gpsValid,
+    is_mock_location: isMockLocation,
     idempotency_key: idempotencyKey,
+    created_at: createdAt,
   };
 
   if (!(await isProbablyOnline())) {
-    return queueEvent({ type: 'handover', idempotencyKey, payload });
+    return queueEvent({ type: 'handover', idempotencyKey, payload, photoUrl: handoverPhotoUrl });
   }
 
   try {
     const { data, error } = await supabase
       .from('shift_handovers')
       .insert(payload)
-      .select('id,status,confirmed_at')
+      .select('id,status,created_at')
       .single();
 
     if (error) throw error;
     return data as MobileMutationResult;
   } catch (err) {
     if (shouldQueueAfterError(err)) {
-      return queueEvent({ type: 'handover', idempotencyKey, payload });
+      return queueEvent({ type: 'handover', idempotencyKey, payload, photoUrl: handoverPhotoUrl });
     }
+
     throw err;
   }
 }
 
+
+export interface MobileHistoryEvent {
+  id: string;
+  kind: 'presence' | 'occurrence' | 'ronda' | 'handover';
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  post_name?: string | null;
+  employee_name?: string | null;
+  gps_lat?: number | null;
+  gps_lng?: number | null;
+  gps_valid?: boolean | null;
+  accuracy?: number | null;
+  validation_method?: string | null;
+  photo_url?: string | null;
+  is_mock_location?: boolean | null;
+}
 export async function getRecentMobileHistory(profile: MobileProfile): Promise<MobileHistoryEvent[]> {
-  const [occurrencesResult, presencesResult, rondaResult, handoverResult] = await Promise.allSettled([
-    supabase
-      .from('occurrences')
-      .select('id,type,severity,status,created_at,description')
-      .eq('employee_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(8),
+  function relationName(value: unknown): string | null {
+    if (!value) return null;
+
+    if (Array.isArray(value)) {
+      const first = value[0] as { name?: unknown } | undefined;
+      return typeof first?.name === 'string' ? first.name : null;
+    }
+
+    if (typeof value === 'object' && 'name' in value) {
+      const name = (value as { name?: unknown }).name;
+      return typeof name === 'string' ? name : null;
+    }
+
+    return null;
+  }
+
+  function asNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  function asBoolean(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+  }
+
+  function asString(value: unknown): string | null {
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  const [presencesResult, occurrencesResult, rondaResult, handoverResult] = await Promise.allSettled([
     supabase
       .from('presences')
-      .select('id,status,created_at,confirmed_at,validation_method')
+      .select('id,employee_id,post_id,status,confirmed_at,created_at,gps_lat,gps_lng,gps_valid,accuracy,validation_method,photo_url,is_mock_location,posts:post_id(name),profiles:employee_id(name)')
+      .eq('employee_id', profile.id)
+      .order('confirmed_at', { ascending: false })
+      .limit(20),
+
+    supabase
+      .from('occurrences')
+      .select('id,type,severity,status,description,created_at,photo_url,gps_lat,gps_lng,posts:post_id(name)')
       .eq('employee_id', profile.id)
       .order('created_at', { ascending: false })
-      .limit(8),
+      .limit(10),
+
     supabase
       .from('ronda_logs')
-      .select('id,status,created_at,confirmed_at,notes')
+      .select('id,status,created_at,confirmed_at,gps_lat,gps_lng,photo_url,posts:post_id(name)')
       .eq('employee_id', profile.id)
       .order('created_at', { ascending: false })
-      .limit(8),
+      .limit(10),
+
     supabase
       .from('shift_handovers')
-      .select('id,status,created_at,confirmed_at,notes')
+      .select('id,status,created_at,notes,incoming_photo_url,gps_lat,gps_lng,posts:post_id(name)')
       .or(`outgoing_employee_id.eq.${profile.id},incoming_employee_id.eq.${profile.id}`)
       .order('created_at', { ascending: false })
-      .limit(8),
+      .limit(10),
   ]);
 
   const events: MobileHistoryEvent[] = [];
 
-  if (occurrencesResult.status === 'fulfilled' && !occurrencesResult.value.error) {
-    for (const item of occurrencesResult.value.data ?? []) {
+  if (presencesResult.status === 'fulfilled' && !presencesResult.value.error) {
+    for (const item of presencesResult.value.data ?? []) {
+      const row = item as Record<string, unknown>;
+      const createdAt = asString(row.confirmed_at) ?? asString(row.created_at) ?? new Date().toISOString();
+      const postName = relationName(row.posts);
+
       events.push({
-        id: String(item.id),
-        kind: 'occurrence',
-        title: item.type === 'sos' ? 'SOS enviado' : `Ocorrência: ${item.type}`,
-        description: `${item.severity ?? 'sem severidade'} · ${item.description ?? 'sem descrição'}`,
-        status: String(item.status ?? 'aberta'),
-        created_at: String(item.created_at),
+        id: String(row.id),
+        kind: 'presence',
+        title: 'Assumiu posto',
+        description: postName ? `Posto: ${postName}` : 'Assunção de posto registrada.',
+        status: String(row.status ?? 'unknown'),
+        created_at: createdAt,
+        post_name: postName,
+        employee_name: relationName(row.profiles),
+        gps_lat: asNumber(row.gps_lat),
+        gps_lng: asNumber(row.gps_lng),
+        gps_valid: asBoolean(row.gps_valid),
+        accuracy: asNumber(row.accuracy),
+        validation_method: asString(row.validation_method),
+        photo_url: asString(row.photo_url),
+        is_mock_location: asBoolean(row.is_mock_location),
       });
     }
   }
 
-  if (presencesResult.status === 'fulfilled' && !presencesResult.value.error) {
-    for (const item of presencesResult.value.data ?? []) {
+  if (occurrencesResult.status === 'fulfilled' && !occurrencesResult.value.error) {
+    for (const item of occurrencesResult.value.data ?? []) {
+      const row = item as Record<string, unknown>;
+      const type = String(row.type ?? 'ocorrência');
+      const severity = String(row.severity ?? '');
+      const postName = relationName(row.posts);
+
       events.push({
-        id: String(item.id),
-        kind: 'presence',
-        title: 'Posto assumido',
-        description: `Método: ${item.validation_method ?? 'gps'}`,
-        status: String(item.status ?? 'valid'),
-        created_at: String(item.confirmed_at ?? item.created_at),
+        id: String(row.id),
+        kind: 'occurrence',
+        title: `Ocorrência: ${type}`,
+        description: `${severity ? `${severity} · ` : ''}${String(row.description ?? 'Sem descrição')}${postName ? ` · ${postName}` : ''}`,
+        status: String(row.status ?? 'unknown'),
+        created_at: asString(row.created_at) ?? new Date().toISOString(),
+        post_name: postName,
+        gps_lat: asNumber(row.gps_lat),
+        gps_lng: asNumber(row.gps_lng),
+        photo_url: asString(row.photo_url),
       });
     }
   }
 
   if (rondaResult.status === 'fulfilled' && !rondaResult.value.error) {
     for (const item of rondaResult.value.data ?? []) {
+      const row = item as Record<string, unknown>;
+      const postName = relationName(row.posts);
+
       events.push({
-        id: String(item.id),
+        id: String(row.id),
         kind: 'ronda',
-        title: 'Ponto de ronda confirmado',
-        description: String(item.notes ?? 'Sem observações'),
-        status: String(item.status ?? 'concluida'),
-        created_at: String(item.confirmed_at ?? item.created_at),
+        title: 'Ronda registrada',
+        description: postName ? `Posto: ${postName}` : 'Ponto de ronda confirmado.',
+        status: String(row.status ?? 'unknown'),
+        created_at: asString(row.confirmed_at) ?? asString(row.created_at) ?? new Date().toISOString(),
+        post_name: postName,
+        gps_lat: asNumber(row.gps_lat),
+        gps_lng: asNumber(row.gps_lng),
+        photo_url: asString(row.photo_url),
       });
     }
   }
 
   if (handoverResult.status === 'fulfilled' && !handoverResult.value.error) {
     for (const item of handoverResult.value.data ?? []) {
+      const row = item as Record<string, unknown>;
+      const postName = relationName(row.posts);
+
       events.push({
-        id: String(item.id),
+        id: String(row.id),
         kind: 'handover',
         title: 'Passagem de plantão',
-        description: String(item.notes ?? 'Sem observações'),
-        status: String(item.status ?? 'confirmada'),
-        created_at: String(item.confirmed_at ?? item.created_at),
+        description: `${postName ? `Posto: ${postName}` : 'Passagem registrada.'}${row.notes ? ` · ${String(row.notes)}` : ''}`,
+        status: String(row.status ?? 'unknown'),
+        created_at: asString(row.created_at) ?? new Date().toISOString(),
+        post_name: postName,
+        gps_lat: asNumber(row.gps_lat),
+        gps_lng: asNumber(row.gps_lng),
+        photo_url: asString(row.incoming_photo_url),
       });
     }
   }
 
   return events
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .slice(0, 20);
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 40);
 }
 
 

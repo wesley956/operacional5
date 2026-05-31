@@ -127,7 +127,21 @@ export function EmployeesPage() {
         },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        const context = (error as { context?: unknown }).context;
+
+        if (context instanceof Response) {
+          try {
+            const body = await context.json();
+            throw new Error(body?.error ?? error.message);
+          } catch {
+            throw new Error(error.message);
+          }
+        }
+
+        throw new Error(error.message);
+      }
+
       if (!data?.ok) throw new Error(data?.error ?? 'Não foi possível atualizar o acesso de campo.');
 
       setFieldCode(normalizedCode);

@@ -260,7 +260,7 @@ export function PresencePage() {
         title="Assunções de posto"
         subtitle={loading ? 'Carregando registros...' : `${presences.length} registros de presença/assunção`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <Button onClick={() => {
               setConfirmError(null);
               setConfirmSuccess(null);
@@ -268,37 +268,43 @@ export function PresencePage() {
             }}>
               <CheckCircle className="w-4 h-4 mr-1" /> Registro manual
             </Button>
-            <SelectField
-              id="method-filter"
-              placeholder="Método"
-              options={Object.entries(METHOD_LABELS).map(([value, label]) => ({ value, label }))}
-              value={methodFilter}
-              onChange={e => setMethodFilter(e.target.value)}
-              className="w-32"
-            />
-            <SelectField
-              id="status-filter"
-              placeholder="Status"
-              options={[
-                { value: 'valid', label: 'Válida' },
-                { value: 'pending_review', label: 'Revisão' },
-                { value: 'rejected', label: 'Rejeitada' },
-              ]}
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="w-32"
-            />
-            <SelectField
-              id="photo-filter"
-              placeholder="Foto"
-              options={[
-                { value: 'with_photo', label: 'Com foto' },
-                { value: 'without_photo', label: 'Sem foto' },
-              ]}
-              value={photoFilter}
-              onChange={e => setPhotoFilter(e.target.value)}
-              className="w-32"
-            />
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <select
+                id="method-filter"
+                value={methodFilter}
+                onChange={e => setMethodFilter(e.target.value)}
+                className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-36"
+              >
+                <option value="">Método</option>
+                {Object.entries(METHOD_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+
+              <select
+                id="status-filter"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-36"
+              >
+                <option value="">Status</option>
+                <option value="valid">Válida</option>
+                <option value="pending_review">Revisão</option>
+                <option value="rejected">Rejeitada</option>
+              </select>
+
+              <select
+                id="photo-filter"
+                value={photoFilter}
+                onChange={e => setPhotoFilter(e.target.value)}
+                className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-36"
+              >
+                <option value="">Foto</option>
+                <option value="with_photo">Com foto</option>
+                <option value="without_photo">Sem foto</option>
+              </select>
+            </div>
           </div>
         }
       />

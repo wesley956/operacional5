@@ -55,6 +55,19 @@ function formatDate(value: string | null | undefined) {
   });
 }
 
+
+function formatUnknownError(value: unknown): string {
+  if (!value) return 'Erro desconhecido.';
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'string') return value;
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function severityClass(severity?: string | null) {
   if (severity === 'critica' || severity === 'alta') return 'bg-red-100 text-red-800 border-red-200';
   if (severity === 'media') return 'bg-amber-100 text-amber-800 border-amber-200';
@@ -86,8 +99,8 @@ async function readFunctionError(error: unknown): Promise<string> {
 
   try {
     const body = await ctx.context.clone().json();
-    if (body?.error) return String(body.error);
-    if (body?.message) return String(body.message);
+    if (body?.error) return formatUnknownError(body.error);
+    if (body?.message) return formatUnknownError(body.message);
   } catch {
     // ignore
   }
@@ -157,7 +170,7 @@ export default function AlertsCenterPage() {
       setPresenceAlerts((presenceData ?? []) as PresenceAlertRow[]);
       setLogs((logData ?? []) as NotificationLog[]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatUnknownError(err));
     } finally {
       setLoading(false);
     }
@@ -240,7 +253,7 @@ export default function AlertsCenterPage() {
       setMessage('Status atualizado.');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatUnknownError(err));
     }
   }
 
@@ -265,12 +278,12 @@ export default function AlertsCenterPage() {
       });
 
       if (functionError) throw new Error(await readFunctionError(functionError));
-      if (data?.ok === false) throw new Error(data?.error ?? 'Falha ao reenviar alerta.');
+      if (data?.ok === false) throw new Error(formatUnknownError(data?.error ?? 'Falha ao reenviar alerta.'));
 
       setMessage(`Alerta reenviado. Enviados: ${data?.sent ?? 0}, falhas: ${data?.failed ?? 0}.`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatUnknownError(err));
     } finally {
       setSending(false);
     }

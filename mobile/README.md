@@ -199,3 +199,13 @@ A tela Histórico do app mobile passa a destacar o uso real do aparelho fixo no 
 - abertura da foto;
 - abertura das coordenadas no mapa;
 - fila offline pendente/falha/sincronizada.
+
+## Fase 11E — Histórico mobile por feed da empresa
+
+A tela Histórico agora busca os eventos por Edge Function (`mobile-history-feed`) para o cenário de aparelho fixo da empresa no posto.
+
+Isso evita depender do usuário logado no aparelho e permite exibir:
+- operador que assumiu o posto;
+- passagens de plantão da empresa;
+- foto/GPS/status;
+- eventos recentes visíveis para o tenant.

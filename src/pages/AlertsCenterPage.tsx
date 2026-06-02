@@ -21,7 +21,6 @@ type NotificationLog = {
   status: string;
   error_message: string | null;
   sent_at: string | null;
-  created_at: string;
   target_user_id: string | null;
 };
 
@@ -89,6 +88,31 @@ function presenceReason(item: PresenceAlertRow) {
   if (item.gps_valid === false) return 'GPS fora do raio ou inválido';
   if (!item.photo_url) return 'Sem foto de evidência';
   return 'Assunção de posto';
+}
+
+
+function occurrenceQuickAction(alert: AlertRow) {
+  if (alert.type === 'ausencia') {
+    return {
+      href: '/#/ft',
+      label: 'Ver FT',
+      className: 'rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-800',
+    };
+  }
+
+  if (alert.type === 'sos') {
+    return {
+      href: '/#/occurrences',
+      label: 'Abrir SOS',
+      className: 'rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-800',
+    };
+  }
+
+  return {
+    href: '/#/occurrences',
+    label: 'Ver ocorrência',
+    className: 'rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800',
+  };
 }
 
 async function readFunctionError(error: unknown): Promise<string> {
@@ -160,8 +184,8 @@ export default function AlertsCenterPage() {
 
       const { data: logData, error: logError } = await supabase
         .from('notification_logs')
-        .select('id,channel,status,error_message,sent_at,created_at,target_user_id')
-        .order('created_at', { ascending: false })
+        .select('id,channel,status,error_message,sent_at,target_user_id')
+        .order('sent_at', { ascending: false })
         .limit(60);
 
       if (logError) throw logError;
@@ -398,7 +422,7 @@ export default function AlertsCenterPage() {
 
                     <div className="flex flex-wrap gap-2 md:min-w-56 md:justify-end">
                       <a href="/#/presence" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
-                        Abrir em Presenças
+                        Analisar assunção
                       </a>
                     </div>
                   </div>
@@ -437,6 +461,15 @@ export default function AlertsCenterPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 md:min-w-56 md:justify-end">
+                    {(() => {
+                      const action = occurrenceQuickAction(alert);
+                      return (
+                        <a href={action.href} className={action.className}>
+                          {action.label}
+                        </a>
+                      );
+                    })()}
+
                     <button type="button" onClick={() => updateStatus(alert.id, 'em_andamento')} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">
                       Em andamento
                     </button>
@@ -468,7 +501,7 @@ export default function AlertsCenterPage() {
               <tbody>
                 {logs.map((log) => (
                   <tr key={log.id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4 text-slate-600">{formatDate(log.sent_at ?? log.created_at)}</td>
+                    <td className="py-2 pr-4 text-slate-600">{log.sent_at ? formatDate(log.sent_at) : '-'}</td>
                     <td className="py-2 pr-4 font-bold text-slate-700">{log.channel}</td>
                     <td className="py-2 pr-4 font-bold text-slate-700">{log.status}</td>
                     <td className="py-2 pr-4 text-slate-500">{log.error_message ?? '-'}</td>

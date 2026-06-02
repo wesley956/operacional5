@@ -35,6 +35,9 @@ export function DashboardPage() {
 
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
+  const goTo = (path: string) => {
+    window.location.hash = path;
+  };
 
   const filteredAlerts = filterCritical
     ? alerts.filter(a => a.type === 'sos' || a.type === 'occurrence' || a.type === 'escalation' || a.severity === 'critical')
@@ -309,13 +312,13 @@ export function DashboardPage() {
                     postName={alert.post_name}
                     isCritical={isCritical}
                     onAck={permissions.canAckAlert ? () => {} : undefined}
-                    onView={() => {}}
+                    onView={() => goTo(alert.type === 'ausencia' ? '/ft' : alert.type === 'sos' ? '/alerts' : '/alerts')}
                     onAction={
                       alert.type === 'ausencia' && permissions.canManageFT
-                        ? () => {}
+                        ? () => goTo('/ft')
                         : undefined
                     }
-                    actionLabel={alert.type === 'ausencia' ? 'Acionar FT' : undefined}
+                    actionLabel={alert.type === 'ausencia' ? 'Ver FT' : undefined}
                   />
                 );
               })}

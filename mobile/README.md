@@ -220,3 +220,13 @@ Fluxo:
 3. Abrir registro em revisão.
 4. Conferir foto, GPS e operador.
 5. Aprovar ou rejeitar a assunção.
+
+
+## Fase 11I — Push automático para Assumir posto em revisão
+
+Quando um registro de Assumir posto cair em `pending_review`, o sistema tenta disparar push para supervisor, gerente, diretor e admin.
+
+Cobertura:
+- fluxo online do app mobile;
+- fluxo offline quando sincronizado pela Edge Function `sync-offline-event`;
+- falha de push não bloqueia o registro operacional.

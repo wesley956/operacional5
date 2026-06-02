@@ -142,6 +142,54 @@ async function queueEvent(params: {
   };
 }
 
+
+async function sendAssumirPostoReviewAlert(params: {
+  profile: MobileProfile;
+  employee?: MobileEmployeeOption | null;
+  schedule: MobileSchedule;
+  presenceId?: string | null;
+  photoUrl?: string | null;
+  gpsValid: boolean;
+  location?: LocationResult | null;
+}) {
+  try {
+    const employeeName = params.employee?.name ?? params.profile.name ?? 'Operador';
+    const postName = params.schedule.post.name;
+    const reason = params.location
+      ? params.location.isMock
+        ? 'GPS suspeito/mock detectado'
+        : params.gpsValid
+          ? 'Aguardando revisão operacional'
+          : 'GPS fora do raio ou inválido'
+      : 'Sem GPS no aparelho';
+
+    const { error } = await supabase.functions.invoke('send-alert', {
+      body: {
+        company_id: params.profile.company_id,
+        roles: ['supervisor', 'gerente', 'diretor', 'admin'],
+        title: '⚠️ Assumir posto em revisão',
+        body: `${employeeName} assumiu ${postName}, mas o registro precisa de revisão: ${reason}.`,
+        data: {
+          type: 'presence_review',
+          source: 'mobile_assumir_posto',
+          presence_id: params.presenceId ?? null,
+          post_id: params.schedule.post.id,
+          employee_id: params.employee?.id ?? params.profile.id,
+          gps_valid: params.gpsValid,
+          has_gps: Boolean(params.location),
+          has_photo: Boolean(params.photoUrl),
+        },
+      },
+    });
+
+    if (error) {
+      console.warn('Falha ao enviar push de revisão de Assumir posto:', error.message);
+    }
+  } catch (err) {
+    console.warn('Push de revisão de Assumir posto ignorado:', err);
+  }
+}
+
 export async function confirmPresence(params: {
   profile: MobileProfile;
   employee?: MobileEmployeeOption | null;
@@ -189,6 +237,19 @@ export async function confirmPresence(params: {
       .single();
 
     if (error) throw error;
+
+    if (data?.status === 'pending_review') {
+      void sendAssumirPostoReviewAlert({
+        profile: params.profile,
+        employee: params.employee,
+        schedule: params.schedule,
+        presenceId: data.id,
+        photoUrl: params.photoUrl,
+        gpsValid: Boolean(params.location) && params.gpsValid,
+        location: params.location,
+      });
+    }
+
     return data as MobileMutationResult;
   } catch (err) {
     if (shouldQueueAfterError(err)) {

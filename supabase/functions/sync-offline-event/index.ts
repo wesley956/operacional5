@@ -142,6 +142,84 @@ function sanitizeEventPayload(params: {
   return { table: 'shift_handovers', insertPayload };
 }
 
+
+async function sendPresenceReviewPush(params: {
+  supabaseUrl: string;
+  anonKey: string;
+  authorization: string;
+  adminClient: ReturnType<typeof createClient>;
+  companyId: string;
+  presenceId: string | null;
+  insertPayload: Record<string, unknown>;
+}) {
+  try {
+    const employeeId = typeof params.insertPayload.employee_id === 'string' ? params.insertPayload.employee_id : null;
+    const postId = typeof params.insertPayload.post_id === 'string' ? params.insertPayload.post_id : null;
+
+    let employeeName = 'Operador';
+    let postName = 'posto não informado';
+
+    if (employeeId) {
+      const { data: employee } = await params.adminClient
+        .from('profiles')
+        .select('name')
+        .eq('id', employeeId)
+        .maybeSingle();
+
+      if (typeof employee?.name === 'string') employeeName = employee.name;
+    }
+
+    if (postId) {
+      const { data: post } = await params.adminClient
+        .from('posts')
+        .select('name')
+        .eq('id', postId)
+        .maybeSingle();
+
+      if (typeof post?.name === 'string') postName = post.name;
+    }
+
+    const hasGps = typeof params.insertPayload.gps_lat === 'number' && typeof params.insertPayload.gps_lng === 'number';
+    const gpsValid = params.insertPayload.gps_valid === true;
+    const isMock = params.insertPayload.is_mock_location === true;
+
+    const reason = isMock
+      ? 'GPS suspeito/mock detectado'
+      : !hasGps
+        ? 'Sem GPS no aparelho'
+        : !gpsValid
+          ? 'GPS fora do raio ou inválido'
+          : 'Aguardando revisão operacional';
+
+    await fetch(`${params.supabaseUrl}/functions/v1/send-alert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: params.anonKey,
+        Authorization: params.authorization,
+      },
+      body: JSON.stringify({
+        company_id: params.companyId,
+        roles: ['supervisor', 'gerente', 'diretor', 'admin'],
+        title: '⚠️ Assumir posto em revisão',
+        body: `${employeeName} assumiu ${postName}, mas o registro precisa de revisão: ${reason}.`,
+        data: {
+          type: 'presence_review',
+          source: 'offline_sync',
+          presence_id: params.presenceId,
+          post_id: postId,
+          employee_id: employeeId,
+          gps_valid: gpsValid,
+          has_gps: hasGps,
+          has_photo: Boolean(params.insertPayload.photo_url),
+        },
+      }),
+    });
+  } catch (err) {
+    console.warn('Push de revisão de presença ignorado:', err);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -222,6 +300,18 @@ serve(async (req) => {
       .single();
 
     if (error) throw error;
+
+    if (table === 'presences' && insertPayload.status === 'pending_review') {
+      await sendPresenceReviewPush({
+        supabaseUrl,
+        anonKey,
+        authorization,
+        adminClient,
+        companyId: String(profile.company_id),
+        presenceId: data?.id ? String(data.id) : null,
+        insertPayload,
+      });
+    }
 
     return json({
       success: true,

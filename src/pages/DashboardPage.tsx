@@ -17,7 +17,7 @@ import {
   usePosts,
   useRealtimeDashboard,
 } from '@/hooks';
-import { RefreshCw, ListFilter, AlertTriangle, Clock, ShieldAlert, Siren, UserCheck } from 'lucide-react';
+import { RefreshCw, ListFilter, AlertTriangle, Clock, ShieldAlert, ShieldOff, Siren, UserCheck } from 'lucide-react';
 
 const OPEN_OCCURRENCE_STATUSES = new Set(['aberta', 'em_andamento', 'em_tratamento', 'pendente']);
 const OPEN_FT_STATUSES = new Set(['aberta', 'acionando', 'em_andamento']);
@@ -64,8 +64,19 @@ export function DashboardPage() {
   const criticalOccurrences = openOccurrences.filter(occ => occ.severity === 'critica' || occ.severity === 'alta');
   const openFTs = ftRequests.filter(ft => OPEN_FT_STATUSES.has(String(ft.status)));
   const pendingPresenceReviews = Number((summary as unknown as { presencas_pendentes?: number }).presencas_pendentes ?? 0);
+  const uncoveredPosts = postStatuses.filter(post => Number(post.confirmed_count) < Number(post.min_staff));
 
   const operationalActions = [
+    {
+      key: 'descobertos',
+      title: 'Postos descobertos',
+      value: uncoveredPosts.length,
+      description: 'Postos sem cobertura mínima agora.',
+      href: '#/posts',
+      icon: <ShieldOff className="h-5 w-5" />,
+      activeClass: 'border-l-slate-700 bg-slate-50',
+      iconClass: 'bg-slate-200 text-slate-700',
+    },
     {
       key: 'sos',
       title: 'SOS abertos',
@@ -181,7 +192,7 @@ export function DashboardPage() {
           </a>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
           {operationalActions.map(action => (
             <Card
               key={action.key}
@@ -241,7 +252,7 @@ export function DashboardPage() {
                   employeesMissing={post.employees_missing}
                   activeSos={post.active_sos_count}
                   lastOccurrence={post.last_occurrence_at ? formatRelativeTime(post.last_occurrence_at) : undefined}
-                  onViewDetails={() => {}}
+                  onViewDetails={() => goTo('/posts')}
                 />
               ))}
             </div>

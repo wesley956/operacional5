@@ -226,7 +226,7 @@ export function HandoverPage() {
                 )}
                 {selected.status === 'retido' && (
                   <>
-                    <Button className="flex-1"><User className="w-4 h-4 mr-1" /> Acionar FT</Button>
+                    <Button onClick={() => { window.location.hash = '/ft'; }} className="flex-1"><User className="w-4 h-4 mr-1" /> Abrir Força Tarefa</Button>
                     <Button variant="secondary">Resolver</Button>
                   </>
                 )}

@@ -149,7 +149,7 @@ export function FTPage() {
           data={ftRequests}
           keyExtractor={f => f.id}
           onRowClick={f => setSelectedId(f.id)}
-          emptyMessage={loading ? "Carregando FTs..." : "Nenhuma FT registrada"}
+          emptyMessage={loading ? "Carregando FTs..." : "Nenhuma FT registrada. Quando uma ausência, SOS ou cobertura emergencial gerar uma força tarefa, ela aparecerá aqui."}
         />
       </Card>
 
@@ -201,7 +201,7 @@ export function FTPage() {
             <div className="flex gap-2 pt-2">
               {selected.status === 'aberta' && (
                 <>
-                  <Button className="flex-1">
+                  <Button onClick={() => setShowAssignModal(true)} className="flex-1">
                     <Users className="w-4 h-4 mr-1" /> Designar Funcionário
                   </Button>
                   <Button variant="secondary">
@@ -210,8 +210,8 @@ export function FTPage() {
                 </>
               )}
               {selected.status === 'acionando' && (
-                <Button className="flex-1">
-                  <CheckCircle className="w-4 h-4 mr-1" /> Confirmar Aceitação
+                <Button disabled className="flex-1" title="A confirmação de aceite será concluída pelo fluxo do app mobile.">
+                  <CheckCircle className="w-4 h-4 mr-1" /> Aguardando aceite
                 </Button>
               )}
             </div>
@@ -221,9 +221,12 @@ export function FTPage() {
 
       {/* Available Employees */}
       <div className="mt-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-3">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">
           Funcionários Disponíveis para FT
         </h2>
+        <p className="mb-3 text-sm text-gray-500">
+          Estes funcionários podem ser usados para cobertura emergencial quando uma FT for aberta.
+        </p>
         {availableEmployees.length === 0 ? (
           <Card>
             <p className="text-sm text-gray-500 text-center py-4">Nenhum funcionário disponível no momento</p>

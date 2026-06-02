@@ -124,6 +124,17 @@ serve(async (req) => {
 
       if (existingAlerts && existingAlerts.length > 0) continue;
 
+      const { data: existingOccurrences } = await supabase
+        .from('occurrences')
+        .select('id')
+        .eq('company_id', shift.company_id)
+        .eq('post_id', shift.post_id)
+        .eq('type', 'ausencia')
+        .in('status', ['aberta', 'em_andamento', 'pendente'])
+        .gt('created_at', new Date(now.getTime() - 60 * 60 * 1000).toISOString());
+
+      if (existingOccurrences && existingOccurrences.length > 0) continue;
+
       const { data: supervisorPost } = await supabase
         .from('supervisor_posts')
         .select('supervisor_id, posts!inner(company_id)')
@@ -148,6 +159,31 @@ serve(async (req) => {
           channel: 'system',
           status: 'sent',
         });
+      }
+
+      let occurrenceId: string | null = null;
+
+      if (!dryRun) {
+        const { data: occurrence, error: occurrenceError } = await supabase
+          .from('occurrences')
+          .insert({
+            company_id: shift.company_id,
+            post_id: shift.post_id,
+            employee_id: shift.employee_id,
+            type: 'ausencia',
+            severity: 'alta',
+            status: 'aberta',
+            description: `Operador não assumiu o posto ${post.name} dentro da tolerância de ${post.tolerance_minutes || 15} minutos.`,
+            idempotency_key: `absence:${shift.id}:${new Date(shift.shift_start).toISOString()}`,
+          })
+          .select('id')
+          .maybeSingle();
+
+        if (occurrenceError) {
+          console.error('Falha ao criar ocorrência de ausência', occurrenceError.message);
+        } else {
+          occurrenceId = occurrence?.id ? String(occurrence.id) : null;
+        }
       }
 
       const { data: existingFT } = await supabase
@@ -186,6 +222,7 @@ serve(async (req) => {
         company_id: shift.company_id,
         post_id: shift.post_id,
         employee_id: shift.employee_id,
+        occurrence_id: occurrenceId,
         action: dryRun ? 'would_open_ft' : 'ft_auto_opened',
       });
     }

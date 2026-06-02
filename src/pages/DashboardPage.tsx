@@ -2,10 +2,11 @@
 // OPERACIONAL5 — Dashboard Principal
 // ============================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProfile } from '@/context/AuthContext';
 import { getPermissions, formatRelativeTime, cn } from '@/lib/utils';
 import { PageHeader, Card, Badge, EmptyState } from '@/components/ui';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import {
   StatCard, PostStatusCard, AlertCard, DASHBOARD_ICONS,
 } from '@/components/DashboardComponents';
@@ -17,7 +18,19 @@ import {
   usePosts,
   useRealtimeDashboard,
 } from '@/hooks';
-import { RefreshCw, ListFilter } from 'lucide-react';
+import { RefreshCw, ListFilter, AlertTriangle, Clock, ShieldAlert, Siren, UserCheck } from 'lucide-react';
+
+type PendingPresenceReview = {
+  id: string;
+  status: string | null;
+  confirmed_at: string | null;
+  created_at: string | null;
+  employee_id: string | null;
+  post_id: string | null;
+};
+
+const OPEN_OCCURRENCE_STATUSES = new Set(['aberta', 'em_andamento', 'em_tratamento', 'pendente']);
+const OPEN_FT_STATUSES = new Set(['aberta', 'acionando', 'em_andamento']);
 
 export function DashboardPage() {
   const profile = useProfile();
@@ -29,6 +42,34 @@ export function DashboardPage() {
   const { fts: ftRequests } = useFT();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
+  const [pendingPresenceReviews, setPendingPresenceReviews] = useState<PendingPresenceReview[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPendingPresenceReviews() {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from('presences')
+          .select('id,status,confirmed_at,created_at,employee_id,post_id')
+          .eq('status', 'pending_review')
+          .order('confirmed_at', { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+        if (mounted) setPendingPresenceReviews((data ?? []) as PendingPresenceReview[]);
+      } catch {
+        if (mounted) setPendingPresenceReviews([]);
+      }
+    }
+
+    void loadPendingPresenceReviews();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
@@ -40,6 +81,65 @@ export function DashboardPage() {
   const filteredPosts = filterCritical
     ? postStatuses.filter(p => p.status === 'critico' || p.status === 'sos_ativo' || p.status === 'descoberto')
     : postStatuses;
+
+  const openOccurrences = occurrences.filter(occ => OPEN_OCCURRENCE_STATUSES.has(String(occ.status)));
+  const openSos = openOccurrences.filter(occ => occ.type === 'sos');
+  const openAbsences = openOccurrences.filter(occ => String(occ.type) === 'ausencia');
+  const criticalOccurrences = openOccurrences.filter(occ => occ.severity === 'critica' || occ.severity === 'alta');
+  const openFTs = ftRequests.filter(ft => OPEN_FT_STATUSES.has(String(ft.status)));
+
+  const operationalActions = [
+    {
+      key: 'sos',
+      title: 'SOS abertos',
+      value: openSos.length,
+      description: 'Emergências acionadas pelo app.',
+      href: '/alerts',
+      icon: <Siren className="h-5 w-5" />,
+      activeClass: 'border-l-red-600 bg-red-50',
+      iconClass: 'bg-red-100 text-red-700',
+    },
+    {
+      key: 'ausencias',
+      title: 'Ausências',
+      value: openAbsences.length,
+      description: 'Postos sem assunção dentro da tolerância.',
+      href: '/alerts',
+      icon: <Clock className="h-5 w-5" />,
+      activeClass: 'border-l-orange-500 bg-orange-50',
+      iconClass: 'bg-orange-100 text-orange-700',
+    },
+    {
+      key: 'revisoes',
+      title: 'Assunções em revisão',
+      value: pendingPresenceReviews.length,
+      description: 'Registros com GPS/foto pendentes de análise.',
+      href: '/presence',
+      icon: <ShieldAlert className="h-5 w-5" />,
+      activeClass: 'border-l-yellow-500 bg-yellow-50',
+      iconClass: 'bg-yellow-100 text-yellow-700',
+    },
+    {
+      key: 'fts',
+      title: 'FTs abertas',
+      value: openFTs.length,
+      description: 'Coberturas e acionamentos pendentes.',
+      href: '/ft',
+      icon: <UserCheck className="h-5 w-5" />,
+      activeClass: 'border-l-blue-600 bg-blue-50',
+      iconClass: 'bg-blue-100 text-blue-700',
+    },
+    {
+      key: 'criticas',
+      title: 'Ocorrências críticas',
+      value: criticalOccurrences.length,
+      description: 'Ocorrências abertas de alta criticidade.',
+      href: '/alerts',
+      icon: <AlertTriangle className="h-5 w-5" />,
+      activeClass: 'border-l-rose-600 bg-rose-50',
+      iconClass: 'bg-rose-100 text-rose-700',
+    },
+  ];
 
   if (dashboardLoading || !summary) {
     return (
@@ -104,6 +204,48 @@ export function DashboardPage() {
           icon={DASHBOARD_ICONS.ft}
           color="text-blue-600"
         />
+      </div>
+
+      {/* Operational Control */}
+      <div className="mb-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Controle operacional imediato</h2>
+          <a href="/alerts" className="text-sm font-bold text-blue-700 hover:underline">
+            Abrir Central de Alertas
+          </a>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {operationalActions.map(action => (
+            <Card
+              key={action.key}
+              className={cn(
+                'border-l-4 border-l-gray-200 transition-colors',
+                action.value > 0 ? action.activeClass : 'bg-white'
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div className={cn('rounded-xl p-2', action.value > 0 ? action.iconClass : 'bg-gray-100 text-gray-500')}>
+                  {action.icon}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">{action.title}</p>
+                  <p className={cn('mt-1 text-3xl font-black', action.value > 0 ? 'text-gray-950' : 'text-gray-400')}>
+                    {action.value}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">{action.description}</p>
+
+                  {action.value > 0 ? (
+                    <a href={action.href} className="mt-3 inline-flex text-xs font-bold text-blue-700 hover:underline">
+                      Ver detalhes
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* Main Grid */}

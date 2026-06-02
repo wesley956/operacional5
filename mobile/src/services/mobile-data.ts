@@ -259,6 +259,43 @@ export async function confirmPresence(params: {
   }
 }
 
+
+async function sendSOSPushAlert(params: {
+  profile: MobileProfile;
+  schedule: MobileSchedule;
+  occurrenceId?: string | null;
+  location?: LocationResult | null;
+}) {
+  try {
+    const postName = params.schedule.post.name;
+
+    const { error } = await supabase.functions.invoke('send-alert', {
+      body: {
+        company_id: params.profile.company_id,
+        roles: ['supervisor', 'gerente', 'diretor', 'admin'],
+        title: '🚨 SOS Operacional5',
+        body: `${params.profile.name ?? 'Operador'} acionou SOS no posto ${postName}.`,
+        data: {
+          type: 'sos',
+          source: 'mobile_sos',
+          occurrence_id: params.occurrenceId ?? null,
+          post_id: params.schedule.post.id,
+          employee_id: params.profile.id,
+          has_gps: Boolean(params.location),
+          gps_lat: params.location?.lat ?? null,
+          gps_lng: params.location?.lng ?? null,
+        },
+      },
+    });
+
+    if (error) {
+      console.warn('Falha ao enviar push de SOS:', error.message);
+    }
+  } catch (err) {
+    console.warn('Push de SOS ignorado:', err);
+  }
+}
+
 export async function createOccurrence(params: {
   profile: MobileProfile;
   schedule: MobileSchedule;
@@ -299,6 +336,16 @@ export async function createOccurrence(params: {
       .single();
 
     if (error) throw error;
+
+    if (params.type === 'sos' || params.severity === 'critica') {
+      void sendSOSPushAlert({
+        profile: params.profile,
+        schedule: params.schedule,
+        occurrenceId: data?.id ?? null,
+        location: params.location,
+      });
+    }
+
     return data as MobileMutationResult;
   } catch (err) {
     if (shouldQueueAfterError(err)) {

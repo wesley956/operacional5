@@ -230,3 +230,13 @@ Cobertura:
 - fluxo online do app mobile;
 - fluxo offline quando sincronizado pela Edge Function `sync-offline-event`;
 - falha de push não bloqueia o registro operacional.
+
+
+## Fase 11N — SOS com push imediato
+
+Quando o operador aciona SOS, o app cria uma ocorrência crítica e tenta disparar push imediatamente para supervisor, gerente, diretor e admin.
+
+Cobertura:
+- fluxo online do app mobile;
+- fluxo offline quando sincronizado pela Edge Function `sync-offline-event`;
+- falha de push não bloqueia a criação da ocorrência.

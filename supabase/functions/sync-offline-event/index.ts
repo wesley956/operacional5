@@ -220,6 +220,72 @@ async function sendPresenceReviewPush(params: {
   }
 }
 
+
+async function sendSOSPush(params: {
+  supabaseUrl: string;
+  anonKey: string;
+  authorization: string;
+  adminClient: ReturnType<typeof createClient>;
+  companyId: string;
+  occurrenceId: string | null;
+  insertPayload: Record<string, unknown>;
+}) {
+  try {
+    const employeeId = typeof params.insertPayload.employee_id === 'string' ? params.insertPayload.employee_id : null;
+    const postId = typeof params.insertPayload.post_id === 'string' ? params.insertPayload.post_id : null;
+
+    let employeeName = 'Operador';
+    let postName = 'posto não informado';
+
+    if (employeeId) {
+      const { data: employee } = await params.adminClient
+        .from('profiles')
+        .select('name')
+        .eq('id', employeeId)
+        .maybeSingle();
+
+      if (typeof employee?.name === 'string') employeeName = employee.name;
+    }
+
+    if (postId) {
+      const { data: post } = await params.adminClient
+        .from('posts')
+        .select('name')
+        .eq('id', postId)
+        .maybeSingle();
+
+      if (typeof post?.name === 'string') postName = post.name;
+    }
+
+    await fetch(`${params.supabaseUrl}/functions/v1/send-alert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: params.anonKey,
+        Authorization: params.authorization,
+      },
+      body: JSON.stringify({
+        company_id: params.companyId,
+        roles: ['supervisor', 'gerente', 'diretor', 'admin'],
+        title: '🚨 SOS Operacional5',
+        body: `${employeeName} acionou SOS no posto ${postName}.`,
+        data: {
+          type: 'sos',
+          source: 'offline_sync',
+          occurrence_id: params.occurrenceId,
+          post_id: postId,
+          employee_id: employeeId,
+          gps_lat: params.insertPayload.gps_lat ?? null,
+          gps_lng: params.insertPayload.gps_lng ?? null,
+          has_gps: params.insertPayload.gps_lat !== null && params.insertPayload.gps_lng !== null,
+        },
+      }),
+    });
+  } catch (err) {
+    console.warn('Push de SOS ignorado:', err);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -309,6 +375,18 @@ serve(async (req) => {
         adminClient,
         companyId: String(profile.company_id),
         presenceId: data?.id ? String(data.id) : null,
+        insertPayload,
+      });
+    }
+
+    if (table === 'occurrences' && insertPayload.type === 'sos') {
+      await sendSOSPush({
+        supabaseUrl,
+        anonKey,
+        authorization,
+        adminClient,
+        companyId: String(profile.company_id),
+        occurrenceId: data?.id ? String(data.id) : null,
         insertPayload,
       });
     }

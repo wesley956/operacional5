@@ -163,7 +163,7 @@ export default function AlertsCenterPage() {
         .order('created_at', { ascending: false })
         .limit(80);
 
-      if (!showResolved) query = query.in('status', ['aberta', 'em_andamento', 'pendente']);
+      if (!showResolved) query = query.in('status', ['aberta', 'em_tratamento', 'pendente']);
       if (onlyCritical) query = query.or('type.eq.sos,severity.eq.critica,severity.eq.alta');
 
       const { data, error: alertError } = await query;
@@ -470,7 +470,7 @@ export default function AlertsCenterPage() {
                       );
                     })()}
 
-                    <button type="button" onClick={() => updateStatus(alert.id, 'em_andamento')} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">
+                    <button type="button" onClick={() => updateStatus(alert.id, 'em_tratamento')} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">
                       Em andamento
                     </button>
                     <button type="button" onClick={() => updateStatus(alert.id, 'resolvida')} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">

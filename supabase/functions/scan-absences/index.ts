@@ -22,6 +22,51 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+
+async function sendAbsencePush(params: {
+  supabaseUrl: string;
+  anonKey: string;
+  cronSecret: string;
+  companyId: string;
+  postId: string;
+  employeeId: string;
+  scheduleId: string;
+  occurrenceId: string | null;
+  postName: string;
+}) {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-cron-secret': params.cronSecret,
+    };
+
+    if (params.anonKey) {
+      headers.apikey = params.anonKey;
+    }
+
+    await fetch(`${params.supabaseUrl}/functions/v1/send-alert`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        company_id: params.companyId,
+        roles: ['supervisor', 'gerente', 'diretor', 'admin'],
+        title: '🚨 Operador não assumiu posto',
+        body: `Ausência detectada no posto ${params.postName}. Nenhuma assunção foi registrada dentro da tolerância.`,
+        data: {
+          type: 'absence',
+          source: 'scan_absences',
+          occurrence_id: params.occurrenceId,
+          post_id: params.postId,
+          employee_id: params.employeeId,
+          schedule_id: params.scheduleId,
+        },
+      }),
+    });
+  } catch (err) {
+    console.warn('Push de ausência ignorado:', err);
+  }
+}
+
 function withCors(response: Response): Response {
   const headers = new Headers(response.headers);
   Object.entries(corsHeaders).forEach(([key, value]) => headers.set(key, value));
@@ -57,6 +102,7 @@ serve(async (req) => {
     assertCronSecret(req);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
@@ -184,6 +230,20 @@ serve(async (req) => {
         } else {
           occurrenceId = occurrence?.id ? String(occurrence.id) : null;
         }
+      }
+
+      if (!dryRun) {
+        await sendAbsencePush({
+          supabaseUrl,
+          anonKey,
+          cronSecret: req.headers.get('x-cron-secret') ?? '',
+          companyId: String(shift.company_id),
+          postId: String(shift.post_id),
+          employeeId: String(shift.employee_id),
+          scheduleId: String(shift.id),
+          occurrenceId,
+          postName: String(post.name ?? 'posto não informado'),
+        });
       }
 
       const { data: existingFT } = await supabase

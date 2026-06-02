@@ -50,34 +50,46 @@ serve(async (req) => {
     }
 
     const authorization = req.headers.get('Authorization');
-    if (!authorization) {
-      return json({ ok: false, error: 'Authorization header obrigatório.' }, 401);
+    const cronSecret = Deno.env.get('CRON_SECRET') ?? Deno.env.get('SUPABASE_CRON_SECRET') ?? '';
+    const cronAuthorized = Boolean(cronSecret && req.headers.get('x-cron-secret') === cronSecret);
+
+    if (!authorization && !cronAuthorized) {
+      return json({ ok: false, error: 'Authorization header ou x-cron-secret obrigatório.' }, 401);
     }
 
-    const callerClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authorization } },
-    });
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: userData, error: userError } = await callerClient.auth.getUser();
-    if (userError || !userData.user) {
-      return json({ ok: false, error: 'Token inválido ou expirado.' }, 401);
-    }
+    let callerProfile: { id: string; company_id: string; role: string | null; active: boolean } | null = null;
+    let platformAdmin: { id: string; active: boolean } | null = null;
 
-    const { data: callerProfile } = await adminClient
-      .from('profiles')
-      .select('id, company_id, role, active')
-      .eq('user_id', userData.user.id)
-      .maybeSingle();
+    if (authorization) {
+      const callerClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authorization } },
+      });
 
-    const { data: platformAdmin } = await adminClient
-      .from('platform_admins')
-      .select('id, active')
-      .eq('user_id', userData.user.id)
-      .maybeSingle();
+      const { data: userData, error: userError } = await callerClient.auth.getUser();
+      if (userError || !userData.user) {
+        return json({ ok: false, error: 'Token inválido ou expirado.' }, 401);
+      }
 
-    if ((!callerProfile || !callerProfile.active) && (!platformAdmin || !platformAdmin.active)) {
-      return json({ ok: false, error: 'Usuário não autorizado.' }, 403);
+      const { data: profileData } = await adminClient
+        .from('profiles')
+        .select('id, company_id, role, active')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+
+      const { data: platformData } = await adminClient
+        .from('platform_admins')
+        .select('id, active')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+
+      callerProfile = profileData as typeof callerProfile;
+      platformAdmin = platformData as typeof platformAdmin;
+
+      if (!cronAuthorized && (!callerProfile || !callerProfile.active) && (!platformAdmin || !platformAdmin.active)) {
+        return json({ ok: false, error: 'Usuário não autorizado.' }, 403);
+      }
     }
 
     const body = await req.json();

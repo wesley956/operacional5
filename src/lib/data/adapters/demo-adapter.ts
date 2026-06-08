@@ -25,7 +25,7 @@ import type {
   AuditFilters, ScheduleFilters,
   ConfirmPresenceInput, PresenceResult, CreateOccurrenceInput,
   TriggerSOSInput, OpenFTInput, RondaPointData, RondaLogData,
-  ConfirmRondaInput, HandoverData, CreateHandoverInput, ReportData,
+  ConfirmRondaInput, CreateRondaPointInput, HandoverData, CreateHandoverInput, ReportData,
   NotificationData, AuditEntryInput, AuditEntryData, ScheduleConflictData,
 } from '../data-provider';
 
@@ -36,6 +36,7 @@ let _profiles = [...DEMO_PROFILES];
 let _presences = [...DEMO_PRESENCES];
 let _occurrences = [...DEMO_OCCURRENCES];
 let _ftRequests = [...DEMO_FT_REQUESTS];
+let _rondaPoints = DEMO_RONDA_POINTS.map(p => ({ ...p }));
 let _rondaLogs = [...DEMO_RONDA_LOGS];
 let _handovers = [...DEMO_HANDOVERS];
 let _notifications = DEMO_NOTIFICATIONS.map(n => ({ ...n }));
@@ -379,7 +380,27 @@ const ftRepo = {
 // ==================== RONDA ====================
 const rondaRepo = {
   async getPoints(postId: string): Promise<RondaPointData[]> {
-    return DEMO_RONDA_POINTS.filter(p => p.post_id === postId);
+    return _rondaPoints
+      .filter(p => p.post_id === postId && p.active)
+      .sort((a, b) => a.sequence_order - b.sequence_order);
+  },
+  async createPoint(input: CreateRondaPointInput): Promise<RondaPointData> {
+    const point: RondaPointData = {
+      id: `rp-${Date.now()}`,
+      post_id: input.post_id,
+      name: input.name,
+      lat: input.lat,
+      lng: input.lng,
+      radius_meters: input.radius_meters ?? 20,
+      sequence_order: input.sequence_order ?? _rondaPoints.filter(p => p.post_id === input.post_id).length + 1,
+      require_photo: input.require_photo ?? false,
+      qr_code_token: input.qr_code_token || `qr-${Date.now()}`,
+      nfc_uid: input.nfc_uid || undefined,
+      active: true,
+      created_at: new Date().toISOString(),
+    };
+    _rondaPoints.push(point);
+    return point;
   },
   async getLogs(filters?: RondaFilters): Promise<RondaLogData[]> {
     let result = [..._rondaLogs];

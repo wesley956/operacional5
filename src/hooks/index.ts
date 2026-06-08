@@ -15,7 +15,7 @@ import type {
   ClientFilters, CreateClientInput, PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
   FTFilters, HandoverFilters, NotificationFilters, ScheduleFilters,
   ConfirmPresenceInput, CreateOccurrenceInput, TriggerSOSInput, OpenFTInput,
-  PresenceResult, RondaPointData, RondaLogData, HandoverData,
+  PresenceResult, RondaPointData, RondaLogData, CreateRondaPointInput, HandoverData,
   ReportData, NotificationData, CreateHandoverInput, AuditEntryData, AuditFilters,
 } from '@/lib/data/data-provider';
 
@@ -440,11 +440,18 @@ export function useRondas(postId?: string) {
     }
   }, [postId]);
 
+  const createPoint = useCallback(async (input: CreateRondaPointInput): Promise<RondaPointData> => {
+    const dp = getDataProvider();
+    const point = await dp.ronda.createPoint(input);
+    await refresh();
+    return point;
+  }, [refresh]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { points, logs, loading, refresh };
+  return { points, logs, loading, refresh, createPoint };
 }
 
 // ==================== USE AUDIT LOG ====================

@@ -2,11 +2,11 @@
 // OPERACIONAL5 — Página de Rondas
 // ============================================================
 
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal } from '@/components/ui';
 import { useEmployees, usePosts, useRondas } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
-import { Search, CheckCircle, Clock, XCircle, AlertTriangle, MapPin, Camera, QrCode } from 'lucide-react';
+import { Search, CheckCircle, Clock, XCircle, AlertTriangle, MapPin, Camera, QrCode, Plus } from 'lucide-react';
 
 const STATUS_CONFIG = {
   concluida: { badge: 'success' as const, icon: <CheckCircle className="w-4 h-4 text-green-600" />, label: 'Concluída' },
@@ -18,9 +18,11 @@ const STATUS_CONFIG = {
 export function RondasPage() {
   const [selectedPostFilter, setSelectedPostFilter] = useState<string>('');
   const [selectedLog, setSelectedLog] = useState<string | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const { posts } = usePosts({ active: true });
-  const { points, logs, loading } = useRondas(selectedPostFilter || undefined);
+  const { points, logs, loading, createPoint } = useRondas(selectedPostFilter || undefined);
   const { employees } = useEmployees({ active: true });
 
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
@@ -36,6 +38,47 @@ export function RondasPage() {
     : logs;
 
   const selectedLogData = selectedLog ? logs.find(l => l.id === selectedLog) : null;
+
+  const getNextSequenceForPost = (postId: string): number => {
+    const orders = points.filter(point => point.post_id === postId).map(point => point.sequence_order);
+    return orders.length ? Math.max(...orders) + 1 : 1;
+  };
+
+  async function handleCreatePoint(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const postId = String(form.get('post_id') ?? '').trim();
+    const name = String(form.get('name') ?? '').trim();
+    const lat = Number(form.get('lat'));
+    const lng = Number(form.get('lng'));
+    const radius = Number(form.get('radius_meters'));
+    const sequence = Number(form.get('sequence_order'));
+    const nfcUid = String(form.get('nfc_uid') ?? '').trim();
+
+    if (!postId || !name || Number.isNaN(lat) || Number.isNaN(lng)) {
+      alert('Informe posto, nome e coordenadas válidas para criar o ponto de ronda.');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await createPoint({
+        post_id: postId,
+        name,
+        lat,
+        lng,
+        radius_meters: Number.isFinite(radius) && radius > 0 ? radius : 20,
+        sequence_order: Number.isFinite(sequence) && sequence > 0 ? sequence : getNextSequenceForPost(postId),
+        require_photo: form.get('require_photo') === 'on',
+        nfc_uid: nfcUid || undefined,
+      });
+      setCreateModalOpen(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao criar ponto de ronda.');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   // Stats
   const completed = logs.filter(l => l.status === 'concluida').length;
@@ -95,6 +138,12 @@ export function RondasPage() {
         subtitle={`${completed}/${total} pontos vistoriados (${completionRate}%)`}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" /> Novo Ponto
+            </button>
             <select
               value={selectedPostFilter}
               onChange={e => setSelectedPostFilter(e.target.value)}
@@ -223,6 +272,78 @@ export function RondasPage() {
           emptyMessage="Nenhuma ronda registrada"
         />
       </Card>
+
+      {/* Create Ronda Point Modal */}
+      <Modal open={createModalOpen} onClose={() => setCreateModalOpen(false)} title="Novo Ponto de Ronda">
+        <form onSubmit={handleCreatePoint} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Posto</label>
+            <select
+              name="post_id"
+              required
+              defaultValue={selectedPostFilter || posts[0]?.id || ''}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              onChange={event => {
+                const sequenceInput = event.currentTarget.form?.elements.namedItem('sequence_order') as HTMLInputElement | null;
+                if (sequenceInput) sequenceInput.value = String(getNextSequenceForPost(event.currentTarget.value));
+              }}
+            >
+              <option value="" disabled>Selecione o posto</option>
+              {posts.map(post => <option key={post.id} value={post.id}>{post.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nome do ponto</label>
+            <input name="name" required placeholder="Ex.: Portaria 2, Garagem, Área técnica" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+              <input name="lat" type="number" step="any" required placeholder="-23.550520" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+              <input name="lng" type="number" step="any" required placeholder="-46.633308" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Raio permitido (m)</label>
+              <input name="radius_meters" type="number" min="1" defaultValue="20" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ordem da ronda</label>
+              <input
+                name="sequence_order"
+                type="number"
+                min="1"
+                defaultValue={selectedPostFilter ? getNextSequenceForPost(selectedPostFilter) : 1}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">NFC UID opcional</label>
+            <input name="nfc_uid" placeholder="Tag NFC do ponto, se houver" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input name="require_photo" type="checkbox" className="rounded border-gray-300" />
+            Exigir foto na confirmação deste ponto
+          </label>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
+            <button type="button" onClick={() => setCreateModalOpen(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50">Cancelar</button>
+            <button type="submit" disabled={creating} className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
+              {creating ? 'Criando...' : 'Criar ponto'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Log Detail Modal */}
       <Modal open={!!selectedLogData} onClose={() => setSelectedLog(null)} title="Detalhes da Ronda">

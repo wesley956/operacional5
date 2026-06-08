@@ -80,6 +80,7 @@ export interface IFTRepository {
 export interface IRondaRepository {
   getPoints(postId: string): Promise<RondaPointData[]>;
   getLogs(filters?: RondaFilters): Promise<RondaLogData[]>;
+  createPoint(input: CreateRondaPointInput): Promise<RondaPointData>;
   confirmPoint(input: ConfirmRondaInput): Promise<RondaLogData>;
 }
 
@@ -269,7 +270,21 @@ export interface RondaPointData {
   sequence_order: number;
   require_photo: boolean;
   qr_code_token: string;
+  nfc_uid?: string;
   active: boolean;
+  created_at?: string;
+}
+
+export interface CreateRondaPointInput {
+  post_id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_meters?: number;
+  sequence_order?: number;
+  require_photo?: boolean;
+  qr_code_token?: string;
+  nfc_uid?: string;
 }
 
 export interface RondaLogData {

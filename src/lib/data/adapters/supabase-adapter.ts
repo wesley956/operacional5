@@ -31,6 +31,7 @@ import type {
   NotificationData,
   RondaPointData,
   RondaLogData,
+  CreateRondaPointInput,
   ConfirmRondaInput,
   HandoverData,
   CreateHandoverInput,
@@ -1026,6 +1027,28 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
 
         assertNoError(error, 'Erro ao listar pontos de ronda');
         return ((data ?? []) as DbRow[]).map(asRondaPoint);
+      },
+
+      async createPoint(input: CreateRondaPointInput): Promise<RondaPointData> {
+        const { data, error } = await supabase
+          .from('ronda_points')
+          .insert({
+            post_id: input.post_id,
+            name: input.name,
+            lat: input.lat,
+            lng: input.lng,
+            radius_meters: input.radius_meters ?? 20,
+            sequence_order: input.sequence_order ?? 0,
+            require_photo: input.require_photo ?? false,
+            qr_code_token: input.qr_code_token,
+            nfc_uid: input.nfc_uid || null,
+            active: true,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar ponto de ronda');
+        return asRondaPoint(data as DbRow);
       },
 
       async getLogs(filters?: RondaFilters): Promise<RondaLogData[]> {

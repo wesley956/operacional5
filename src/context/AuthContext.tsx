@@ -58,6 +58,7 @@ type ProfileRow = {
   id: string;
   user_id?: string | null;
   company_id: string;
+  client_id?: string | null;
   role: Role;
   name: string;
   email?: string | null;
@@ -100,6 +101,7 @@ function normalizeProfile(row: ProfileRow): Profile {
     id: row.id,
     user_id: row.user_id ?? row.id,
     company_id: row.company_id,
+    client_id: row.client_id ?? null,
     role: row.role,
     name: row.name,
     email: row.email ?? '',

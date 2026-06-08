@@ -24,6 +24,7 @@ function formatUnknownError(value: unknown): string {
 }
 
 const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'default'> = {
+  client_viewer: 'info',
   admin: 'danger',
   diretor: 'warning',
   gerente: 'info',

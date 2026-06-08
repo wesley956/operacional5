@@ -92,7 +92,7 @@ function TenantRoutes() {
         <Route path="/schedules" element={<TenantGuard permission={p => p.canManageSchedules}><SchedulesPage /></TenantGuard>} />
         <Route path="/reports" element={<TenantGuard permission={p => p.canViewAudit}><ReportsPage /></TenantGuard>} />
         <Route path="/notifications" element={<TenantGuard><NotificationsPage /></TenantGuard>} />
-        <Route path="/client-portal" element={<TenantGuard><ClientPortalPage /></TenantGuard>} />
+        <Route path="/client-portal" element={<TenantGuard permission={p => p.canAccessClientPortal}><ClientPortalPage /></TenantGuard>} />
         <Route path="/settings" element={<TenantGuard permission={p => p.canManageSettings}><SettingsPage /></TenantGuard>} />
         <Route path="/admin" element={<TenantGuard permission={p => p.canAccessAdmin}><AdminPage /></TenantGuard>} />
         <Route path="/alerts" element={<TenantGuard><AlertsCenterPage /></TenantGuard>} />
@@ -147,13 +147,17 @@ function SuperAdminShell() {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, isLoading, isPlatformAdmin } = useAuth();
+  const { isAuthenticated, isLoading, isPlatformAdmin, profile } = useAuth();
   const location = useLocation();
 
   if (isLoading) return <LoadingScreen />;
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  if (profile?.role === 'client_viewer' && !location.pathname.startsWith('/client-portal')) {
+    return <Navigate to="/client-portal" replace />;
   }
 
   if (location.pathname.startsWith('/super-admin')) {

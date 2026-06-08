@@ -7,7 +7,7 @@ import type { Role, AlertType, Severity, OperationalStatus } from './types';
 // --- Permissões por Cargo ---
 
 export const ROLE_HIERARCHY: Role[] = [
-  'operador', 'lider', 'supervisor', 'gerente', 'diretor', 'admin'
+  'client_viewer', 'operador', 'lider', 'supervisor', 'gerente', 'diretor', 'admin'
 ];
 
 export function getRoleLevel(role: Role): number {
@@ -38,10 +38,23 @@ export interface PermissionSet {
   canManageSettings: boolean;
   canAccessAdmin: boolean;
   canAckAlert: boolean;
+  canAccessClientPortal: boolean;
 }
 
 export function getPermissions(role: Role): PermissionSet {
   switch (role) {
+    case 'client_viewer':
+      return {
+        canViewAllPosts: false, canViewAssignedPosts: false, canManagePosts: false,
+        canViewAllEmployees: false, canManageEmployees: false,
+        canViewAllPresences: false, canConfirmPresence: false,
+        canViewAllOccurrences: false, canCreateOccurrence: false, canResolveOccurrence: false,
+        canTriggerSOS: false, canCloseSOS: false,
+        canManageFT: false, canViewFT: false,
+        canManageSchedules: false, canViewAudit: false,
+        canManageSettings: false, canAccessAdmin: false, canAckAlert: false,
+        canAccessClientPortal: true,
+      };
     case 'admin':
       return {
         canViewAllPosts: true, canViewAssignedPosts: true, canManagePosts: true,
@@ -51,7 +64,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: false, canCloseSOS: true,
         canManageFT: true, canViewFT: true,
         canManageSchedules: true, canViewAudit: true,
-        canManageSettings: true, canAccessAdmin: true, canAckAlert: true,
+        canManageSettings: true, canAccessAdmin: true, canAckAlert: true, canAccessClientPortal: false,
       };
     case 'diretor':
       return {
@@ -62,7 +75,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: false, canCloseSOS: true,
         canManageFT: true, canViewFT: true,
         canManageSchedules: false, canViewAudit: true,
-        canManageSettings: false, canAccessAdmin: false, canAckAlert: true,
+        canManageSettings: false, canAccessAdmin: false, canAckAlert: true, canAccessClientPortal: false,
       };
     case 'gerente':
       return {
@@ -73,7 +86,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: false, canCloseSOS: true,
         canManageFT: true, canViewFT: true,
         canManageSchedules: true, canViewAudit: true,
-        canManageSettings: true, canAccessAdmin: false, canAckAlert: true,
+        canManageSettings: true, canAccessAdmin: false, canAckAlert: true, canAccessClientPortal: false,
       };
     case 'supervisor':
       return {
@@ -84,7 +97,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: false, canCloseSOS: true,
         canManageFT: true, canViewFT: true,
         canManageSchedules: false, canViewAudit: false,
-        canManageSettings: false, canAccessAdmin: false, canAckAlert: true,
+        canManageSettings: false, canAccessAdmin: false, canAckAlert: true, canAccessClientPortal: false,
       };
     case 'lider':
       return {
@@ -95,7 +108,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: false, canCloseSOS: false,
         canManageFT: false, canViewFT: true,
         canManageSchedules: false, canViewAudit: false,
-        canManageSettings: false, canAccessAdmin: false, canAckAlert: false,
+        canManageSettings: false, canAccessAdmin: false, canAckAlert: false, canAccessClientPortal: false,
       };
     case 'operador':
       return {
@@ -106,7 +119,7 @@ export function getPermissions(role: Role): PermissionSet {
         canTriggerSOS: true, canCloseSOS: false,
         canManageFT: false, canViewFT: false,
         canManageSchedules: false, canViewAudit: false,
-        canManageSettings: false, canAccessAdmin: false, canAckAlert: false,
+        canManageSettings: false, canAccessAdmin: false, canAckAlert: false, canAccessClientPortal: false,
       };
   }
 }

@@ -3,7 +3,7 @@
 // ============================================================
 
 // --- Enums ---
-export type Role = 'operador' | 'lider' | 'supervisor' | 'gerente' | 'diretor' | 'admin';
+export type Role = 'client_viewer' | 'operador' | 'lider' | 'supervisor' | 'gerente' | 'diretor' | 'admin';
 export type PresenceMethod = 'gps' | 'qr' | 'nfc' | 'manual';
 export type PresenceStatus = 'valid' | 'pending_review' | 'rejected';
 export type OccurrenceType = 'furto' | 'acidente' | 'invasao' | 'dano' | 'briga' | 'suspeito' | 'outro' | 'sos';
@@ -38,6 +38,7 @@ export interface Profile {
   id: string;
   user_id: string;
   company_id: string;
+  client_id?: string | null;
   role: Role;
   name: string;
   email?: string;
@@ -327,6 +328,7 @@ export interface CreateOccurrenceInput {
 
 // --- Role Display Info ---
 export const ROLE_LABELS: Record<Role, string> = {
+  client_viewer: 'Cliente',
   operador: 'Operador',
   lider: 'Líder',
   supervisor: 'Supervisor',

@@ -16,7 +16,7 @@ import type {
   FTFilters, HandoverFilters, NotificationFilters, ScheduleFilters,
   ConfirmPresenceInput, CreateOccurrenceInput, TriggerSOSInput, OpenFTInput,
   PresenceResult, RondaPointData, RondaLogData, HandoverData,
-  ReportData, NotificationData,
+  ReportData, NotificationData, CreateHandoverInput,
 } from '@/lib/data/data-provider';
 
 // ==================== USE POSTS ====================
@@ -181,28 +181,60 @@ export function usePresence(filters?: PresenceFilters) {
 export function useOccurrences(filters?: OccurrenceFilters) {
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.occurrences.list(filters);
+      setOccurrences(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.occurrences.list(filters);
-        setOccurrences(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
   const createOccurrence = useCallback(async (input: CreateOccurrenceInput): Promise<Occurrence> => {
     const dp = getDataProvider();
     const occ = await dp.occurrences.create(input);
-    const data = await dp.occurrences.list(filters);
-    setOccurrences(data);
+    await refresh();
     return occ;
-  }, [JSON.stringify(filters)]);
+  }, [refresh]);
 
-  return { occurrences, loading, createOccurrence };
+  const acknowledgeOccurrence = useCallback(async (id: string, role: Role): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.occurrences.acknowledge(id, role);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  const resolveOccurrence = useCallback(async (id: string, resolvedBy: string): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.occurrences.resolve(id, resolvedBy);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  const closeSOSOccurrence = useCallback(async (id: string, closedBy: string, resolution: string): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.sos.close(id, closedBy, resolution);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  return {
+    occurrences,
+    loading,
+    refresh,
+    createOccurrence,
+    acknowledgeOccurrence,
+    resolveOccurrence,
+    closeSOSOccurrence,
+  };
 }
 
 // ==================== USE SOS ====================
@@ -242,31 +274,56 @@ export function useFT(filters?: FTFilters) {
   const [fts, setFts] = useState<FTRequest[]>([]);
   const [candidates, setCandidates] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [ftData, candData] = await Promise.all([
+        dp.ft.list(filters),
+        dp.employees.getAvailableForFT(),
+      ]);
+      setFts(ftData);
+      setCandidates(candData);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [ftData, candData] = await Promise.all([
-          dp.ft.list(filters),
-          dp.employees.getAvailableForFT(),
-        ]);
-        setFts(ftData);
-        setCandidates(candData);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
   const openFT = useCallback(async (input: OpenFTInput): Promise<FTRequest> => {
     const dp = getDataProvider();
     const ft = await dp.ft.open(input);
-    setFts(await dp.ft.list(filters));
+    await refresh();
     return ft;
-  }, [JSON.stringify(filters)]);
+  }, [refresh]);
 
-  return { fts, candidates, loading, openFT };
+  const assignFT = useCallback(async (ftId: string, employeeId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.assign(ftId, employeeId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  const resolveFT = useCallback(async (ftId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.resolve(ftId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  const cancelFT = useCallback(async (ftId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.cancel(ftId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  return { fts, candidates, loading, refresh, openFT, assignFT, resolveFT, cancelFT };
 }
 
 // ==================== USE RONDAS ====================
@@ -298,20 +355,45 @@ export function useRondas(postId?: string) {
 export function useHandovers(filters?: HandoverFilters) {
   const [handovers, setHandovers] = useState<HandoverData[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.handover.list(filters);
+      setHandovers(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.handover.list(filters);
-        setHandovers(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
-  return { handovers, loading };
+  const createHandover = useCallback(async (input: CreateHandoverInput): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.create(input);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  const confirmHandover = useCallback(async (id: string): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.confirm(id);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  const reportRetention = useCallback(async (id: string, reason: string): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.reportRetention(id, reason);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  return { handovers, loading, refresh, createHandover, confirmHandover, reportRetention };
 }
 
 // ==================== USE REPORTS ====================

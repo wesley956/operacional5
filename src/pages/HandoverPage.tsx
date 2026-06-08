@@ -17,7 +17,10 @@ const STATUS_CONFIG = {
 
 export function HandoverPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { handovers, loading } = useHandovers();
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const { handovers, loading, confirmHandover } = useHandovers();
   void loading;
   const { posts } = usePosts();
   const { employees } = useEmployees({ active: true });
@@ -25,6 +28,24 @@ export function HandoverPage() {
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const selected = selectedId ? handovers.find(h => h.id === selectedId) : null;
+
+
+  const handleConfirmSelected = async () => {
+    if (!selected) return;
+
+    setActionLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await confirmHandover(selected.id);
+      setActionSuccess('Passagem de plantão confirmada com sucesso.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível confirmar a passagem.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const confirmed = handovers.filter(h => h.status === 'confirmada').length;
   const pending = handovers.filter(h => h.status === 'pendente').length;
@@ -36,6 +57,18 @@ export function HandoverPage() {
         title="Passagem de Plantão"
         subtitle={`${handovers.length} passagens — ${retained} retenções`}
       />
+
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -222,12 +255,24 @@ export function HandoverPage() {
 
               <div className="flex gap-2 pt-2">
                 {selected.status === 'pendente' && (
-                  <Button className="flex-1"><CheckCircle className="w-4 h-4 mr-1" /> Confirmar Passagem</Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => void handleConfirmSelected()}
+                    loading={actionLoading}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-1" /> Confirmar Passagem
+                  </Button>
                 )}
                 {selected.status === 'retido' && (
                   <>
                     <Button onClick={() => { window.location.hash = '/ft'; }} className="flex-1"><User className="w-4 h-4 mr-1" /> Abrir Força Tarefa</Button>
-                    <Button variant="secondary">Resolver</Button>
+                    <Button
+                      variant="secondary"
+                      disabled
+                      title="A resolução de retenção ainda não existe no adapter; por enquanto, abra uma FT."
+                    >
+                      Resolver
+                    </Button>
                   </>
                 )}
               </div>

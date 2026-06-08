@@ -5,6 +5,7 @@
 import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
+import { useProfile } from '@/context/AuthContext';
 import { SeverityBadge } from '@/components/DashboardComponents';
 import { useEmployees, useOccurrences, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
@@ -52,8 +53,19 @@ export function OccurrencesPage() {
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [actionLoading, setActionLoading] = useState<'ack' | 'resolve' | 'close_sos' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const { occurrences, loading, createOccurrence } = useOccurrences();
+  const profile = useProfile();
+  const {
+    occurrences,
+    loading,
+    createOccurrence,
+    acknowledgeOccurrence,
+    resolveOccurrence,
+    closeSOSOccurrence,
+  } = useOccurrences();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
@@ -117,6 +129,32 @@ export function OccurrencesPage() {
       setCreateError(error instanceof Error ? error.message : 'Erro ao registrar ocorrência.');
     } finally {
       setCreating(false);
+    }
+  };
+
+
+  const handleOccurrenceAction = async (action: 'ack' | 'resolve' | 'close_sos') => {
+    if (!selected) return;
+
+    setActionLoading(action);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      if (action === 'ack') {
+        await acknowledgeOccurrence(selected.id, profile.role);
+        setActionSuccess('Ciência registrada e ocorrência movida para em tratamento.');
+      } else if (action === 'resolve') {
+        await resolveOccurrence(selected.id, profile.id);
+        setActionSuccess('Ocorrência resolvida com sucesso.');
+      } else {
+        await closeSOSOccurrence(selected.id, profile.id, 'SOS encerrado pela central web.');
+        setActionSuccess('SOS encerrado com sucesso.');
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível concluir a ação.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -214,6 +252,18 @@ export function OccurrencesPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
+
       <Card padding={false}>
         <DataTable
           columns={columns}
@@ -291,17 +341,31 @@ export function OccurrencesPage() {
 
             <div className="flex gap-2 pt-2 border-t border-gray-100">
               {selected.status === 'aberta' && (
-                <Button>
+                <Button
+                  onClick={() => void handleOccurrenceAction('ack')}
+                  loading={actionLoading === 'ack'}
+                  disabled={actionLoading !== null}
+                >
                   <CheckCircle className="w-4 h-4 mr-1" /> Marcar Ciência
                 </Button>
               )}
               {(selected.status === 'aberta' || selected.status === 'em_tratamento') && (
-                <Button variant="secondary">
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleOccurrenceAction('resolve')}
+                  loading={actionLoading === 'resolve'}
+                  disabled={actionLoading !== null}
+                >
                   Resolver Ocorrência
                 </Button>
               )}
-              {selected.type === 'sos' && (
-                <Button variant="danger">
+              {selected.type === 'sos' && selected.status !== 'resolvida' && (
+                <Button
+                  variant="danger"
+                  onClick={() => void handleOccurrenceAction('close_sos')}
+                  loading={actionLoading === 'close_sos'}
+                  disabled={actionLoading !== null}
+                >
                   Encerrar SOS
                 </Button>
               )}

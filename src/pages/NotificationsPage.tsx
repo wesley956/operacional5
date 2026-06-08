@@ -9,7 +9,7 @@ import { formatRelativeTime, cn } from '@/lib/utils';
 import {
   Bell, BellOff, Check, CheckCheck, AlertTriangle, Siren,
   Clock, Users, MapPin, Shield, ArrowRight, Eye,
-  Filter,
+  Filter, RefreshCw, Smartphone, MessageSquare, MonitorCheck, Info,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,7 +35,7 @@ const SEVERITY_STYLES: Record<string, string> = {
 export function NotificationsPage() {
   const navigate = useNavigate();
   const [filterUnread, setFilterUnread] = useState(false);
-  const { notifications, unreadCount, loading, markAsRead, markAllRead } = useNotifications(
+  const { notifications, unreadCount, loading, refresh, markAsRead, markAllRead } = useNotifications(
     filterUnread ? { is_read: false } : undefined
   );
 
@@ -48,6 +48,13 @@ export function NotificationsPage() {
         subtitle={`${unreadCount} não lidas de ${notifications.length} total`}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void refresh(false)}
+            >
+              <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
+            </Button>
             <Button
               variant={filterUnread ? 'primary' : 'secondary'}
               size="sm"
@@ -147,28 +154,73 @@ export function NotificationsPage() {
 
       {/* Notification Channels Info */}
       <Card className="mt-6">
-        <div className="flex items-center gap-3 mb-3">
-          <Bell className="w-5 h-5 text-gray-600" />
-          <h3 className="font-semibold text-gray-900">Canais de Notificação</h3>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <Bell className="w-5 h-5 text-gray-600" />
+            <div>
+              <h3 className="font-semibold text-gray-900">Canais de Notificação</h3>
+              <p className="text-xs text-gray-500">
+                A central atualiza automaticamente a cada 30 segundos e ao voltar o foco da aba.
+              </p>
+            </div>
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <ChannelCard name="Sistema" description="Alertas na interface web" status="active" />
-          <ChannelCard name="Push (FCM)" description="Notificações no celular" status="prepared" />
-          <ChannelCard name="SMS (Twilio)" description="Fallback para SMS" status="prepared" />
+          <ChannelCard
+            icon={<MonitorCheck className="w-4 h-4 text-green-600" />}
+            name="Sistema"
+            description="Alertas internos gravados em alert_log e exibidos na interface web."
+            status="active"
+          />
+          <ChannelCard
+            icon={<Smartphone className="w-4 h-4 text-gray-500" />}
+            name="Push mobile"
+            description="O app registra token, mas o backend de disparo remoto ainda precisa ser ativado."
+            status="roadmap"
+          />
+          <ChannelCard
+            icon={<MessageSquare className="w-4 h-4 text-gray-500" />}
+            name="SMS"
+            description="Sem integração Twilio/Vonage configurada neste pacote."
+            status="disabled"
+          />
+        </div>
+        <div className="mt-4 flex gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+          <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p>
+            Status corrigido para não vender push/SMS como prontos. Hoje o canal confiável é o sistema web;
+            push e SMS dependem de Edge Function/serviço externo para envio real.
+          </p>
         </div>
       </Card>
     </div>
   );
 }
 
-function ChannelCard({ name, description, status }: { name: string; description: string; status: 'active' | 'prepared' }) {
+type ChannelStatus = 'active' | 'roadmap' | 'disabled';
+
+const CHANNEL_STATUS: Record<ChannelStatus, { label: string; variant: 'success' | 'warning' | 'default' }> = {
+  active: { label: 'Ativo', variant: 'success' },
+  roadmap: { label: 'Backlog', variant: 'warning' },
+  disabled: { label: 'Inativo', variant: 'default' },
+};
+
+function ChannelCard({ icon, name, description, status }: {
+  icon: React.ReactNode;
+  name: string;
+  description: string;
+  status: ChannelStatus;
+}) {
+  const badge = CHANNEL_STATUS[status];
+
   return (
     <div className="bg-gray-50 rounded-lg p-3">
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-sm font-medium text-gray-900">{name}</p>
-        <Badge variant={status === 'active' ? 'success' : 'warning'}>
-          {status === 'active' ? 'Ativo' : 'Preparado'}
-        </Badge>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+        </div>
+        <Badge variant={badge.variant}>{badge.label}</Badge>
       </div>
       <p className="text-xs text-gray-500">{description}</p>
     </div>

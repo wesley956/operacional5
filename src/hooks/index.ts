@@ -560,46 +560,58 @@ export function useNotifications(filters?: NotificationFilters) {
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [data, count] = await Promise.all([
+        dp.notifications.list(filters),
+        dp.notifications.getUnreadCount(),
+      ]);
+      setNotifications(data);
+      setUnreadCount(count);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [data, count] = await Promise.all([
-          dp.notifications.list(filters),
-          dp.notifications.getUnreadCount(),
-        ]);
-        setNotifications(data);
-        setUnreadCount(count);
-      } finally { setLoading(false); }
+    void refresh(true);
+
+    const interval = window.setInterval(() => {
+      void refresh(false);
+    }, 30_000);
+
+    const handleFocus = () => void refresh(false);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refresh(false);
     };
-    load();
-  }, [JSON.stringify(filters)]);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refresh]);
 
   const markAsRead = useCallback(async (id: string) => {
     const dp = getDataProvider();
     await dp.notifications.markAsRead(id);
-    const [data, count] = await Promise.all([
-      dp.notifications.list(filters),
-      dp.notifications.getUnreadCount(),
-    ]);
-    setNotifications(data);
-    setUnreadCount(count);
-  }, [JSON.stringify(filters)]);
+    await refresh(false);
+  }, [refresh]);
 
   const markAllRead = useCallback(async () => {
     const dp = getDataProvider();
     await dp.notifications.markAllRead();
-    const [data, count] = await Promise.all([
-      dp.notifications.list(filters),
-      dp.notifications.getUnreadCount(),
-    ]);
-    setNotifications(data);
-    setUnreadCount(count);
-  }, [JSON.stringify(filters)]);
+    await refresh(false);
+  }, [refresh]);
 
-  return { notifications, unreadCount, loading, markAsRead, markAllRead };
+  return { notifications, unreadCount, loading, refresh, markAsRead, markAllRead };
 }
 
 // ==================== USE SCHEDULES ====================

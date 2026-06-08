@@ -593,20 +593,24 @@ export function useNotifications(filters?: NotificationFilters) {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    const channel = mode === 'demo'
-      ? null
-      : getSupabaseClient()
-        .channel('notifications-alert-log-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, () => {
-          void refresh(false);
-        })
-        .subscribe();
+    const supabase = mode === 'demo' ? null : getSupabaseClient();
+    const channel = supabase
+      ? supabase.channel(`notifications-alert-log-realtime-${Date.now()}-${Math.random()}`)
+      : null;
+
+    if (channel) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, () => {
+        void refresh(false);
+      });
+
+      channel.subscribe();
+    }
 
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
-      if (channel) void getSupabaseClient().removeChannel(channel);
+      if (channel && supabase) void supabase.removeChannel(channel);
     };
   }, [mode, refresh]);
 
@@ -788,23 +792,28 @@ export function useRealtimeDashboard() {
       }, 500);
     };
 
-    const channel = mode === 'demo'
-      ? null
-      : getSupabaseClient()
-        .channel('operational-dashboard-realtime')
+    const supabase = mode === 'demo' ? null : getSupabaseClient();
+    const channel = supabase
+      ? supabase.channel(`operational-dashboard-realtime-${Date.now()}-${Math.random()}`)
+      : null;
+
+    if (channel) {
+      channel
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, scheduleRealtimeRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ft_requests' }, scheduleRealtimeRefresh)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, scheduleRealtimeRefresh)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRealtimeRefresh)
-        .subscribe();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRealtimeRefresh);
+
+      channel.subscribe();
+    }
 
     return () => {
       window.clearInterval(interval);
       if (realtimeTimer) window.clearTimeout(realtimeTimer);
       window.removeEventListener('focus', handleFocus);
-      if (channel) void getSupabaseClient().removeChannel(channel);
+      if (channel && supabase) void supabase.removeChannel(channel);
     };
   }, [mode, refresh]);
 

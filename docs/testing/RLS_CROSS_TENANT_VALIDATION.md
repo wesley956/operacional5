@@ -83,3 +83,19 @@ Nenhuma registrada ainda.
 ## Conclusão
 
 Pendente.
+
+## Resultado executado
+
+- Empresa Alpha criada com sucesso.
+- Empresa Beta criada com sucesso.
+- Alpha criou cliente, posto, funcionário e ocorrência próprios.
+- Beta criou cliente, posto, funcionário e ocorrência próprios.
+- Logado como Beta, dados da Alpha não apareceram.
+- Logado como Alpha, dados da Beta não apareceram.
+- Upload de evidência funcionou no Supabase real.
+- Storage evidence respeitou o isolamento esperado.
+- Resultado geral: RLS cross-tenant validado manualmente com sucesso.
+
+## Conclusão final
+
+A validação manual entre duas empresas reais no Supabase passou. O isolamento por tenant está funcionando nos fluxos testados.

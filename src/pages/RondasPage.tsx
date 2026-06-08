@@ -19,10 +19,8 @@ export function RondasPage() {
   const [selectedPostFilter, setSelectedPostFilter] = useState<string>('');
   const [selectedLog, setSelectedLog] = useState<string | null>(null);
 
-  const { posts } = usePosts();
-  const defaultPostId = posts[0]?.id;
-  const { points, logs, loading } = useRondas(defaultPostId);
-  void loading;
+  const { posts } = usePosts({ active: true });
+  const { points, logs, loading } = useRondas(selectedPostFilter || undefined);
   const { employees } = useEmployees({ active: true });
 
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
@@ -103,9 +101,9 @@ export function RondasPage() {
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">Todos os postos</option>
-              <option value="post-001">Portaria Principal</option>
-              <option value="post-002">Estacionamento Subsolo</option>
-              <option value="post-003">Portaria Torre B</option>
+              {posts.map(post => (
+                <option key={post.id} value={post.id}>{post.name}</option>
+              ))}
             </select>
           </div>
         }
@@ -155,7 +153,17 @@ export function RondasPage() {
       <div className="mb-6">
         <h2 className="text-base font-semibold text-gray-900 mb-3">Pontos de Ronda</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredPoints.map((point) => {
+          {loading && (
+            <Card>
+              <p className="text-sm text-gray-500">Carregando pontos de ronda...</p>
+            </Card>
+          )}
+          {!loading && filteredPoints.length === 0 && (
+            <Card>
+              <p className="text-sm text-gray-500">Nenhum ponto de ronda cadastrado para o filtro selecionado.</p>
+            </Card>
+          )}
+          {!loading && filteredPoints.map((point) => {
             const log = logs.find(l => l.ronda_point_id === point.id);
             const status = log?.status ?? 'pendente';
             const cfg = STATUS_CONFIG[status];

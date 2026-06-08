@@ -176,6 +176,8 @@ export interface NotificationFilters {
 }
 
 export interface AuditFilters {
+  company_id?: string;
+  actor_id?: string;
   entity?: string;
   action?: string;
   date_from?: string;

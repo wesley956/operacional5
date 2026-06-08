@@ -138,8 +138,21 @@ export function validatePhone(phone: string): boolean {
 
 export function validateCNPJ(cnpj: string): boolean {
   const clean = cnpj.replace(/\D/g, '');
+
   if (clean.length !== 14) return false;
-  return true; // Simplificado para MVP
+  if (/(\d)\1{13}/.test(clean)) return false;
+
+  const digits = clean.split('').map(Number);
+  const calculateDigit = (baseDigits: number[], weights: number[]) => {
+    const sum = baseDigits.reduce((total, digit, index) => total + digit * weights[index], 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  const firstDigit = calculateDigit(digits.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const secondDigit = calculateDigit([...digits.slice(0, 12), firstDigit], [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+
+  return digits[12] === firstDigit && digits[13] === secondDigit;
 }
 
 export function generateIdempotencyKey(): string {

@@ -16,7 +16,7 @@ import type {
   FTFilters, HandoverFilters, NotificationFilters, ScheduleFilters,
   ConfirmPresenceInput, CreateOccurrenceInput, TriggerSOSInput, OpenFTInput,
   PresenceResult, RondaPointData, RondaLogData, HandoverData,
-  ReportData, NotificationData, CreateHandoverInput,
+  ReportData, NotificationData, CreateHandoverInput, AuditEntryData, AuditFilters,
 } from '@/lib/data/data-provider';
 
 
@@ -377,23 +377,59 @@ export function useRondas(postId?: string) {
   const [logs, setLogs] = useState<RondaLogData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [ptData, logData] = await Promise.all([
-          postId ? dp.ronda.getPoints(postId) : Promise.resolve([]),
-          dp.ronda.getLogs(postId ? { post_id: postId } : undefined),
-        ]);
-        setPoints(ptData);
-        setLogs(logData);
-      } finally { setLoading(false); }
-    };
-    load();
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [posts, logData] = await Promise.all([
+        postId ? Promise.resolve([]) : dp.posts.list({ active: true }),
+        dp.ronda.getLogs(postId ? { post_id: postId } : undefined),
+      ]);
+
+      const pointData = postId
+        ? await dp.ronda.getPoints(postId)
+        : (await Promise.all(posts.map(post => dp.ronda.getPoints(post.id)))).flat();
+
+      setPoints(pointData);
+      setLogs(logData);
+    } finally {
+      setLoading(false);
+    }
   }, [postId]);
 
-  return { points, logs, loading };
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { points, logs, loading, refresh };
+}
+
+// ==================== USE AUDIT LOG ====================
+export function useAuditLog(filters?: AuditFilters) {
+  const [entries, setEntries] = useState<AuditEntryData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const profile = useProfile();
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.audit.list({
+        company_id: filters?.company_id ?? profile.company_id,
+        ...filters,
+      });
+      setEntries(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey, profile.company_id]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { entries, loading, refresh };
 }
 
 // ==================== USE HANDOVERS ====================

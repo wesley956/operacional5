@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { getDataProvider } from '@/lib/data/data-provider';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { useProfile } from '@/context/AuthContext';
+import { useAuth, useProfile } from '@/context/AuthContext';
 import { getPermissions } from '@/lib/utils';
 import type {
   Post, Profile, Role, Presence, Occurrence, FTRequest, Client,
@@ -561,6 +561,7 @@ export function useNotifications(filters?: NotificationFilters) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const filterKey = JSON.stringify(filters);
+  const { mode } = useAuth();
 
   const refresh = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -592,12 +593,22 @@ export function useNotifications(filters?: NotificationFilters) {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
+    const channel = mode === 'demo'
+      ? null
+      : getSupabaseClient()
+        .channel('notifications-alert-log-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, () => {
+          void refresh(false);
+        })
+        .subscribe();
+
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
+      if (channel) void getSupabaseClient().removeChannel(channel);
     };
-  }, [refresh]);
+  }, [mode, refresh]);
 
   const markAsRead = useCallback(async (id: string) => {
     const dp = getDataProvider();
@@ -737,6 +748,7 @@ export function useRealtimeDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [postStatuses, setStatuses] = useState<OperationalPostStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const { mode } = useAuth();
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -768,11 +780,33 @@ export function useRealtimeDashboard() {
 
     window.addEventListener('focus', handleFocus);
 
+    let realtimeTimer: number | undefined;
+    const scheduleRealtimeRefresh = () => {
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      realtimeTimer = window.setTimeout(() => {
+        void refresh({ silent: true });
+      }, 500);
+    };
+
+    const channel = mode === 'demo'
+      ? null
+      : getSupabaseClient()
+        .channel('operational-dashboard-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ft_requests' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRealtimeRefresh)
+        .subscribe();
+
     return () => {
       window.clearInterval(interval);
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
       window.removeEventListener('focus', handleFocus);
+      if (channel) void getSupabaseClient().removeChannel(channel);
     };
-  }, [refresh]);
+  }, [mode, refresh]);
 
   return { summary, postStatuses, loading, refresh };
 }

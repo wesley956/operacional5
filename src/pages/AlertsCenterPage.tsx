@@ -216,11 +216,28 @@ export default function AlertsCenterPage() {
 
     window.addEventListener('focus', handleFocus);
 
+    let realtimeTimer: number | undefined;
+    const scheduleRealtimeReload = () => {
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      realtimeTimer = window.setTimeout(() => {
+        void load({ silent: true });
+      }, 500);
+    };
+
+    const channel = supabase
+      .channel('alerts-center-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_logs' }, scheduleRealtimeReload)
+      .subscribe();
+
     return () => {
       window.clearInterval(interval);
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
       window.removeEventListener('focus', handleFocus);
+      void supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, supabase]);
 
   const unifiedAlerts = useMemo<UnifiedAlert[]>(() => {
     const occurrenceItems: UnifiedAlert[] = alerts.map((item) => ({ kind: 'occurrence', item }));

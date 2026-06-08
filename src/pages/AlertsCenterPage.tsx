@@ -44,6 +44,8 @@ type UnifiedAlert =
   | { kind: 'occurrence'; item: AlertRow }
   | { kind: 'presence'; item: PresenceAlertRow };
 
+const ALERTS_AUTO_REFRESH_MS = 30_000;
+
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
   return new Date(value).toLocaleString('pt-BR', {
@@ -152,8 +154,9 @@ export default function AlertsCenterPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
@@ -196,13 +199,45 @@ export default function AlertsCenterPage() {
     } catch (err) {
       setError(formatUnknownError(err));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [onlyCritical, showResolved, supabase]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+
+    const interval = window.setInterval(() => {
+      void load({ silent: true });
+    }, ALERTS_AUTO_REFRESH_MS);
+
+    const handleFocus = () => {
+      void load({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    let realtimeTimer: number | undefined;
+    const scheduleRealtimeReload = () => {
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      realtimeTimer = window.setTimeout(() => {
+        void load({ silent: true });
+      }, 500);
+    };
+
+    const channel = supabase
+      .channel('alerts-center-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_logs' }, scheduleRealtimeReload)
+      .subscribe();
+
+    return () => {
+      window.clearInterval(interval);
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      window.removeEventListener('focus', handleFocus);
+      void supabase.removeChannel(channel);
+    };
+  }, [load, supabase]);
 
   const unifiedAlerts = useMemo<UnifiedAlert[]>(() => {
     const occurrenceItems: UnifiedAlert[] = alerts.map((item) => ({ kind: 'occurrence', item }));
@@ -359,7 +394,7 @@ export default function AlertsCenterPage() {
               <input type="checkbox" checked={showResolved} onChange={(event) => setShowResolved(event.target.checked)} />
               Mostrar resolvidos
             </label>
-            <button type="button" onClick={load} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
+            <button type="button" onClick={() => void load()} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800">
               Atualizar
             </button>
           </div>

@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
   { path: '/map', label: 'Mapa', icon: <MapPin className="w-5 h-5" /> },
   { path: '/posts', label: 'Postos', icon: <Building2 className="w-5 h-5" />, permission: p => p.canViewAllPosts || p.canViewAssignedPosts },
+  { path: '/clients', label: 'Clientes', icon: <User className="w-5 h-5" />, permission: p => p.canViewAllPosts },
   { path: '/employees', label: 'Funcionários', icon: <Users className="w-5 h-5" />, permission: p => p.canViewAllEmployees },
   { path: '/presence', label: 'Presença', icon: <MapPin className="w-5 h-5" />, permission: p => p.canViewAllPresences || p.canConfirmPresence },
   { path: '/occurrences', label: 'Ocorrências', icon: <FileWarning className="w-5 h-5" />, permission: p => p.canViewAllOccurrences || p.canCreateOccurrence },

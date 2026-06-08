@@ -2,12 +2,12 @@
 // OPERACIONAL5 — Passagem de Plantão (Shift Handover)
 // ============================================================
 
-import { useState } from 'react';
-import { PageHeader, Card, Badge, Modal, Button } from '@/components/ui';
+import { useState, type FormEvent } from 'react';
+import { PageHeader, Card, Badge, Modal, Button, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees, useHandovers, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime, cn } from '@/lib/utils';
-import { ArrowRightLeft, Clock, AlertTriangle, CheckCircle, AlertCircle, User } from 'lucide-react';
+import { ArrowRightLeft, Clock, AlertTriangle, CheckCircle, AlertCircle, User, Plus } from 'lucide-react';
 
 const STATUS_CONFIG = {
   confirmada: { badge: 'success' as const, icon: <CheckCircle className="w-5 h-5 text-green-600" />, label: 'Confirmada', color: 'border-l-green-500 bg-green-50' },
@@ -15,9 +15,22 @@ const STATUS_CONFIG = {
   retido: { badge: 'danger' as const, icon: <AlertTriangle className="w-5 h-5 text-red-600" />, label: 'Retido', color: 'border-l-red-500 bg-red-50' },
 };
 
+function parsePendingItems(raw: FormDataEntryValue | null): string[] {
+  return String(raw ?? '')
+    .split(/\n|,/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
 export function HandoverPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { handovers, loading } = useHandovers();
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const { handovers, loading, createHandover, confirmHandover } = useHandovers();
   void loading;
   const { posts } = usePosts();
   const { employees } = useEmployees({ active: true });
@@ -25,6 +38,69 @@ export function HandoverPage() {
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const selected = selectedId ? handovers.find(h => h.id === selectedId) : null;
+  const postOptions = posts.map(post => ({ value: post.id, label: post.name }));
+  const employeeOptions = employees.map(employee => ({ value: employee.id, label: employee.name }));
+
+  const handleCreateHandover = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const form = new FormData(event.currentTarget);
+    const postId = String(form.get('post_id') ?? '').trim();
+    const outgoingEmployeeId = String(form.get('outgoing_employee_id') ?? '').trim();
+    const incomingEmployeeId = String(form.get('incoming_employee_id') ?? '').trim();
+    const notes = String(form.get('notes') ?? '').trim();
+    const pendingItems = parsePendingItems(form.get('pending_items'));
+
+    if (!postId || !outgoingEmployeeId || !incomingEmployeeId) {
+      setCreateError('Selecione o posto, o vigilante que sai e o vigilante que entra.');
+      return;
+    }
+
+    if (outgoingEmployeeId === incomingEmployeeId) {
+      setCreateError('O vigilante que sai e o vigilante que entra não podem ser a mesma pessoa.');
+      return;
+    }
+
+    setCreateLoading(true);
+    setCreateError(null);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await createHandover({
+        post_id: postId,
+        outgoing_employee_id: outgoingEmployeeId,
+        incoming_employee_id: incomingEmployeeId,
+        notes: notes || undefined,
+        pending_items: pendingItems,
+      });
+      setShowCreateModal(false);
+      setActionSuccess('Passagem de plantão criada com sucesso.');
+      event.currentTarget.reset();
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Não foi possível criar a passagem de plantão.');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+
+  const handleConfirmSelected = async () => {
+    if (!selected) return;
+
+    setActionLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await confirmHandover(selected.id);
+      setActionSuccess('Passagem de plantão confirmada com sucesso.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível confirmar a passagem.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const confirmed = handovers.filter(h => h.status === 'confirmada').length;
   const pending = handovers.filter(h => h.status === 'pendente').length;
@@ -35,7 +111,24 @@ export function HandoverPage() {
       <PageHeader
         title="Passagem de Plantão"
         subtitle={`${handovers.length} passagens — ${retained} retenções`}
+        actions={
+          <Button onClick={() => { setCreateError(null); setShowCreateModal(true); }}>
+            <Plus className="w-4 h-4 mr-1" /> Nova Passagem
+          </Button>
+        }
       />
+
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -151,6 +244,65 @@ export function HandoverPage() {
         })}
       </div>
 
+      {/* Create Modal */}
+      <Modal open={showCreateModal} onClose={() => setShowCreateModal(false)} title="Nova Passagem de Plantão" size="lg">
+        <form onSubmit={handleCreateHandover} className="space-y-4">
+          {createError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+
+          <SelectField
+            name="post_id"
+            label="Posto"
+            placeholder="Selecione o posto"
+            options={postOptions}
+            required
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <SelectField
+              name="outgoing_employee_id"
+              label="Vigilante que sai"
+              placeholder="Selecione o vigilante"
+              options={employeeOptions}
+              required
+            />
+            <SelectField
+              name="incoming_employee_id"
+              label="Vigilante que entra"
+              placeholder="Selecione o vigilante"
+              options={employeeOptions}
+              required
+            />
+          </div>
+
+          <Textarea
+            name="pending_items"
+            label="Pendências transferidas"
+            placeholder="Uma pendência por linha ou separadas por vírgula"
+            rows={4}
+          />
+
+          <Textarea
+            name="notes"
+            label="Observações"
+            placeholder="Checklist, materiais, ocorrências abertas ou observações do turno"
+            rows={4}
+          />
+
+          <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={createLoading}>
+              Criar Passagem
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Detail Modal */}
       <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Detalhes da Passagem" size="lg">
         {selected && (() => {
@@ -222,12 +374,24 @@ export function HandoverPage() {
 
               <div className="flex gap-2 pt-2">
                 {selected.status === 'pendente' && (
-                  <Button className="flex-1"><CheckCircle className="w-4 h-4 mr-1" /> Confirmar Passagem</Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => void handleConfirmSelected()}
+                    loading={actionLoading}
+                  >
+                    <CheckCircle className="w-4 h-4 mr-1" /> Confirmar Passagem
+                  </Button>
                 )}
                 {selected.status === 'retido' && (
                   <>
                     <Button onClick={() => { window.location.hash = '/ft'; }} className="flex-1"><User className="w-4 h-4 mr-1" /> Abrir Força Tarefa</Button>
-                    <Button variant="secondary">Resolver</Button>
+                    <Button
+                      variant="secondary"
+                      disabled
+                      title="A resolução de retenção ainda não existe no adapter; por enquanto, abra uma FT."
+                    >
+                      Resolver
+                    </Button>
                   </>
                 )}
               </div>

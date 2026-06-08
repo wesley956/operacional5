@@ -9,7 +9,7 @@
 // ============================================================
 
 import type {
-  Profile, Post, Schedule, Presence,
+  Profile, Post, Schedule, Presence, Client,
   Occurrence, FTRequest, OperationalPostStatus,
   DashboardSummary, Role, PresenceMethod, Severity,
   OccurrenceType, FTReason, HandoverStatus,
@@ -20,11 +20,20 @@ import { DEMO_MODE, SUPABASE_ANON_KEY, SUPABASE_URL, assertSafeRuntimeConfig } f
 
 // --- Repository Interfaces ---
 
+
+export interface IClientsRepository {
+  list(filters?: ClientFilters): Promise<Client[]>;
+  getById(id: string): Promise<Client | null>;
+  create(data: CreateClientInput): Promise<Client>;
+  update(id: string, data: Partial<CreateClientInput>): Promise<Client>;
+}
+
 export interface IPostsRepository {
   list(filters?: PostFilters): Promise<Post[]>;
   getById(id: string): Promise<Post | null>;
   create(data: Omit<Post, 'id' | 'created_at' | 'updated_at' | 'qr_code_token'>): Promise<Post>;
   update(id: string, data: Partial<Post>): Promise<Post>;
+  delete(id: string): Promise<void>;
   getOperationalStatuses(): Promise<OperationalPostStatus[]>;
   getOperationalStatus(postId: string): Promise<OperationalPostStatus | null>;
 }
@@ -71,6 +80,7 @@ export interface IFTRepository {
 export interface IRondaRepository {
   getPoints(postId: string): Promise<RondaPointData[]>;
   getLogs(filters?: RondaFilters): Promise<RondaLogData[]>;
+  createPoint(input: CreateRondaPointInput): Promise<RondaPointData>;
   confirmPoint(input: ConfirmRondaInput): Promise<RondaLogData>;
 }
 
@@ -104,15 +114,23 @@ export interface ISchedulesRepository {
   list(filters?: ScheduleFilters): Promise<Schedule[]>;
   getByEmployee(employeeId: string): Promise<Schedule[]>;
   create(data: Omit<Schedule, 'id' | 'created_at'>): Promise<Schedule>;
+  update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule>;
+  delete(id: string): Promise<void>;
   detectConflicts(employeeId: string): Promise<ScheduleConflictData[]>;
 }
 
 // --- Input/Output Types ---
 
+export interface ClientFilters {
+  company_id?: string;
+  active?: boolean;
+  search?: string;
+}
+
 export interface PostFilters {
   company_id?: string;
   client_id?: string;
-  active?: boolean;
+  active?: boolean | 'all';
 }
 
 export interface EmployeeFilters {
@@ -162,6 +180,8 @@ export interface NotificationFilters {
 }
 
 export interface AuditFilters {
+  company_id?: string;
+  actor_id?: string;
   entity?: string;
   action?: string;
   date_from?: string;
@@ -172,6 +192,19 @@ export interface ScheduleFilters {
   post_id?: string;
   employee_id?: string;
   is_active?: boolean;
+}
+
+
+export interface CreateClientInput {
+  company_id: string;
+  name: string;
+  cnpj?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  address?: string;
+  notes?: string;
+  active?: boolean;
 }
 
 export interface ConfirmPresenceInput {
@@ -237,7 +270,21 @@ export interface RondaPointData {
   sequence_order: number;
   require_photo: boolean;
   qr_code_token: string;
+  nfc_uid?: string;
   active: boolean;
+  created_at?: string;
+}
+
+export interface CreateRondaPointInput {
+  post_id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_meters?: number;
+  sequence_order?: number;
+  require_photo?: boolean;
+  qr_code_token?: string;
+  nfc_uid?: string;
 }
 
 export interface RondaLogData {
@@ -349,6 +396,7 @@ export interface ScheduleConflictData {
 // --- Data Provider Interface ---
 
 export interface IDataProvider {
+  clients: IClientsRepository;
   posts: IPostsRepository;
   employees: IEmployeesRepository;
   presence: IPresenceRepository;

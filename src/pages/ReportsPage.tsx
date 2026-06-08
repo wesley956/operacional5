@@ -15,23 +15,92 @@ import {
 const TYPE_LABELS: Record<string, string> = {
   daily: 'Diário',
   weekly: 'Semanal',
-  monthly: 'Mensal',
-  incident: 'Incidente',
 };
 
 const TYPE_COLORS: Record<string, string> = {
   daily: 'bg-blue-100 text-blue-800',
   weekly: 'bg-purple-100 text-purple-800',
-  monthly: 'bg-green-100 text-green-800',
-  incident: 'bg-red-100 text-red-800',
 };
+
+type ExportableReport = {
+  id: string;
+  type: string;
+  title: string;
+  date: string;
+  posts_total: number;
+  posts_covered: number;
+  occurrences_count: number;
+  critical_occurrences: number;
+  fts_opened: number;
+  fts_resolved: number;
+  sos_count: number;
+  avg_response_time_min: number;
+  presence_rate: number;
+  ronda_completion: number;
+};
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function exportReportAsPdf(report: ExportableReport) {
+  const popup = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
+  if (!popup) {
+    window.alert('O navegador bloqueou a janela de exportação. Permita pop-ups para gerar o PDF.');
+    return;
+  }
+
+  const typeLabel = TYPE_LABELS[report.type];
+  const safeTitle = escapeHtml(report.title);
+
+  popup.document.write(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>${safeTitle}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111827; margin: 32px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .meta { color: #6b7280; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+    .label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .footer { margin-top: 28px; color: #6b7280; font-size: 12px; }
+    @media print { body { margin: 18mm; } button { display: none; } }
+  </style>
+</head>
+<body>
+  <button onclick="window.print()" style="float:right;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;background:white;cursor:pointer">Imprimir / Salvar PDF</button>
+  <h1>${safeTitle}</h1>
+  <div class="meta">${escapeHtml(typeLabel)} • ${escapeHtml(formatDate(report.date))}</div>
+  <div class="grid">
+    <div class="card"><div class="label">Taxa de presença</div><div class="value">${report.presence_rate}%</div></div>
+    <div class="card"><div class="label">Rondas concluídas</div><div class="value">${report.ronda_completion}%</div></div>
+    <div class="card"><div class="label">Postos cobertos</div><div class="value">${report.posts_covered}/${report.posts_total}</div></div>
+    <div class="card"><div class="label">Ocorrências</div><div class="value">${report.occurrences_count}</div></div>
+    <div class="card"><div class="label">Ocorrências críticas</div><div class="value">${report.critical_occurrences}</div></div>
+    <div class="card"><div class="label">SOS</div><div class="value">${report.sos_count}</div></div>
+    <div class="card"><div class="label">FTs abertas/resolvidas</div><div class="value">${report.fts_opened}/${report.fts_resolved}</div></div>
+    <div class="card"><div class="label">Tempo médio de resposta</div><div class="value">${report.avg_response_time_min} min</div></div>
+  </div>
+  <div class="footer">Gerado pelo Operacional5 em ${escapeHtml(new Date().toLocaleString('pt-BR'))}.</div>
+  <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));<\/script>
+</body>
+</html>`);
+  popup.document.close();
+}
 
 export function ReportsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
   const { daily, weekly, loading } = useReports();
-  void loading;
   const reports = [daily, weekly].filter((report): report is NonNullable<typeof daily> => report !== null);
   const ftAutoActions: Array<{ id: string; type: string; post_name: string; description: string; timestamp: string; automated: boolean }> = [];
   const filtered = typeFilter ? reports.filter(r => r.type === typeFilter) : reports;
@@ -83,7 +152,15 @@ export function ReportsPage() {
                     </div>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    exportReportAsPdf(report);
+                  }}
+                  aria-label={`Exportar ${report.title} em PDF`}
+                >
                   <Download className="w-4 h-4" />
                 </Button>
               </div>
@@ -105,7 +182,14 @@ export function ReportsPage() {
 
         {/* Report Detail / Dashboard */}
         <div className="space-y-4">
-          {selectedReport ? (
+          {loading ? (
+            <Card>
+              <div className="text-center py-8">
+                <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-3 animate-pulse" />
+                <p className="text-sm text-gray-500">Carregando relatórios...</p>
+              </div>
+            </Card>
+          ) : selectedReport ? (
             <>
               <Card>
                 <h3 className="font-semibold text-gray-900 mb-4">Métricas do Relatório</h3>
@@ -131,10 +215,9 @@ export function ReportsPage() {
                 </div>
               </Card>
 
-              <Button className="w-full">
+              <Button className="w-full" onClick={() => exportReportAsPdf(selectedReport)}>
                 <Download className="w-4 h-4 mr-2" /> Exportar PDF
               </Button>
-              <p className="text-xs text-gray-400 text-center">⚠️ Exportação PDF disponível em produção</p>
             </>
           ) : (
             <Card>
@@ -153,7 +236,11 @@ export function ReportsPage() {
 
         <Card padding={false}>
           <div className="divide-y divide-gray-100">
-            {ftAutoActions.map(action => (
+            {ftAutoActions.length === 0 ? (
+              <div className="p-6 text-center text-sm text-gray-500">
+                Nenhuma ação automática registrada no período.
+              </div>
+            ) : ftAutoActions.map(action => (
               <div key={action.id} className="p-4 flex items-start gap-3 hover:bg-gray-50 transition-colors">
                 <div className={cn(
                   'p-1.5 rounded-lg flex-shrink-0',

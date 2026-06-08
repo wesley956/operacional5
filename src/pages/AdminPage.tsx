@@ -2,35 +2,48 @@
 // OPERACIONAL5 — Página de Administração
 // ============================================================
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PageHeader, Card, Badge, DataTable, Button } from '@/components/ui';
-import { useEmployees } from '@/hooks';
+import { useAuditLog, useEmployees } from '@/hooks';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { formatDateTime } from '@/lib/utils';
 import { ROLE_LABELS } from '@/lib/types';
-import { Shield, Users, Database, Activity, AlertTriangle, Key, Eye } from 'lucide-react';
+import type { AuditEntryData } from '@/lib/data/data-provider';
+import { Shield, Users, Database, Activity, AlertTriangle, Key, Eye, RefreshCw } from 'lucide-react';
 
-const MOCK_AUDIT = [
-  { id: 'aud-001', actor: 'Carlos Mendes', action: 'login', entity: 'auth', entity_id: 'user-gerente', time: new Date(Date.now() - 3600000).toISOString() },
-  { id: 'aud-002', actor: 'Marcos Oliveira', action: 'checkin_approve', entity: 'presence', entity_id: 'pres-002', time: new Date(Date.now() - 7200000).toISOString() },
-  { id: 'aud-003', actor: 'Sistema', action: 'sos_trigger', entity: 'occurrence', entity_id: 'occ-002', time: new Date(Date.now() - 600000).toISOString() },
-  { id: 'aud-004', actor: 'Sistema', action: 'mock_location_detected', entity: 'presence', entity_id: 'pres-xxx', time: new Date(Date.now() - 86400000).toISOString() },
-  { id: 'aud-005', actor: 'Carlos Mendes', action: 'ft_open', entity: 'ft_request', entity_id: 'ft-001', time: new Date(Date.now() - 2100000).toISOString() },
-];
-
-const COMPANY_META = {
-  name: 'Alpha Segurança',
-  cnpj: '12.345.678/0001-90',
-  created_at: '2026-01-01T06:00:00.000Z',
-};
+function getAuditVariant(action: string) {
+  const normalized = action.toLowerCase();
+  if (normalized.includes('sos') || normalized.includes('mock') || normalized.includes('delete') || normalized.includes('cancel')) {
+    return 'danger' as const;
+  }
+  if (normalized.includes('update') || normalized.includes('resolve') || normalized.includes('approve')) {
+    return 'warning' as const;
+  }
+  if (normalized.includes('create') || normalized.includes('login') || normalized.includes('open')) {
+    return 'info' as const;
+  }
+  return 'default' as const;
+}
 
 export function AdminPage() {
   const [showAuditDetail, setShowAuditDetail] = useState(false);
   const { employees } = useEmployees();
+  const { settings, isLoading: settingsLoading } = useCompanySettings();
+  const { entries: auditEntries, loading: auditLoading, refresh: refreshAudit } = useAuditLog();
+
+  const visibleAuditEntries = useMemo(
+    () => showAuditDetail ? auditEntries : auditEntries.slice(0, 5),
+    [auditEntries, showAuditDetail]
+  );
+
+  const companyName = settings?.companyName || 'Empresa não carregada';
+  const companyDocument = settings?.cnpj || settings?.document || 'Não informado';
+  const companyCreatedAt = settings?.companyId ? 'Cadastro real do tenant' : 'Não informado';
 
   const systemStats = {
     totalUsers: employees.length,
     activeUsers: employees.filter(p => p.active).length,
-    company: COMPANY_META.name,
+    company: companyName,
     version: '1.0.0-mvp1',
   };
 
@@ -38,38 +51,38 @@ export function AdminPage() {
     {
       key: 'time',
       header: 'Data/Hora',
-      render: (_: typeof MOCK_AUDIT[0]) => (
-        <span className="text-sm text-gray-600">{formatDateTime(_.time)}</span>
+      render: (entry: AuditEntryData) => (
+        <span className="text-sm text-gray-600">{formatDateTime(entry.created_at)}</span>
       ),
     },
     {
       key: 'actor',
       header: 'Ator',
-      render: (_: typeof MOCK_AUDIT[0]) => (
-        <span className="text-sm font-medium text-gray-900">{_.actor}</span>
+      render: (entry: AuditEntryData) => (
+        <span className="text-sm font-medium text-gray-900">{entry.actor_name || 'Sistema'}</span>
       ),
     },
     {
       key: 'action',
       header: 'Ação',
-      render: (_: typeof MOCK_AUDIT[0]) => (
-        <Badge variant={_.action.includes('sos') || _.action.includes('mock') ? 'danger' : 'default'}>
-          {_.action}
+      render: (entry: AuditEntryData) => (
+        <Badge variant={getAuditVariant(entry.action)}>
+          {entry.action}
         </Badge>
       ),
     },
     {
       key: 'entity',
       header: 'Entidade',
-      render: (_: typeof MOCK_AUDIT[0]) => (
-        <span className="text-sm text-gray-600">{_.entity}:{_.entity_id}</span>
+      render: (entry: AuditEntryData) => (
+        <span className="text-sm text-gray-600">{entry.entity}:{entry.entity_id}</span>
       ),
     },
     {
       key: 'view',
       header: '',
       render: () => (
-        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600">
+        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600" title="Detalhe disponível no registro de auditoria">
           <Eye className="w-4 h-4" />
         </button>
       ),
@@ -133,6 +146,7 @@ export function AdminPage() {
         <div className="flex items-center gap-3 mb-4">
           <Building2Icon />
           <h3 className="font-semibold text-gray-900">Empresa</h3>
+          {settingsLoading && <Badge variant="default">Carregando</Badge>}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
@@ -140,16 +154,16 @@ export function AdminPage() {
             <p className="text-sm font-medium text-gray-900">{systemStats.company}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">CNPJ</p>
-            <p className="text-sm font-medium text-gray-900">{COMPANY_META.cnpj}</p>
+            <p className="text-xs text-gray-500">CNPJ / Documento</p>
+            <p className="text-sm font-medium text-gray-900">{companyDocument}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">Status</p>
             <Badge variant="success">Ativa</Badge>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Criada em</p>
-            <p className="text-sm font-medium text-gray-900">{formatDateTime(COMPANY_META.created_at)}</p>
+            <p className="text-xs text-gray-500">Origem</p>
+            <p className="text-sm font-medium text-gray-900">{companyCreatedAt}</p>
           </div>
         </div>
       </Card>
@@ -190,21 +204,30 @@ export function AdminPage() {
       {/* Audit Log */}
       <Card padding={false}>
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <Key className="w-5 h-5 text-gray-600" />
-              <h3 className="font-semibold text-gray-900">Log de Auditoria</h3>
+              <div>
+                <h3 className="font-semibold text-gray-900">Log de Auditoria</h3>
+                <p className="text-xs text-gray-500">Dados reais do repositório de auditoria do tenant</p>
+              </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowAuditDetail(!showAuditDetail)}>
-              {showAuditDetail ? 'Resumo' : 'Ver tudo'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => void refreshAudit()} disabled={auditLoading}>
+                <RefreshCw className="w-4 h-4" />
+                Atualizar
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowAuditDetail(!showAuditDetail)}>
+                {showAuditDetail ? 'Resumo' : 'Ver tudo'}
+              </Button>
+            </div>
           </div>
         </div>
         <DataTable
           columns={columns}
-          data={showAuditDetail ? MOCK_AUDIT : MOCK_AUDIT.slice(0, 5)}
+          data={visibleAuditEntries}
           keyExtractor={a => a.id}
-          emptyMessage="Nenhum log de auditoria"
+          emptyMessage={auditLoading ? 'Carregando log de auditoria...' : 'Nenhum log de auditoria real encontrado'}
         />
       </Card>
 
@@ -215,8 +238,8 @@ export function AdminPage() {
           <div>
             <p className="text-sm font-semibold text-yellow-800">Área Administrativa</p>
             <p className="text-xs text-yellow-700 mt-0.5">
-              Todas as ações nesta área são auditadas. Em produção, o acesso admin requer autenticação
-              de dois fatores e é restrito a administradores autorizados da empresa.
+              Todas as ações nesta área são auditadas. O painel não usa mais registros fictícios;
+              se a tabela estiver vazia, a UI mostrará vazio em vez de inventar eventos.
             </p>
           </div>
         </div>

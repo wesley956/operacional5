@@ -5,23 +5,38 @@
 import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
-import { useEmployees, usePosts } from '@/hooks';
+import { useClients, useEmployees, usePosts } from '@/hooks';
 import { formatDistance } from '@/lib/geo';
 import { cn } from '@/lib/utils';
-import { MapPin, Building2, Wifi, WifiOff, QrCode, Cpu, Plus, Edit, Eye } from 'lucide-react';
+import { MapPin, Building2, Wifi, WifiOff, QrCode, Cpu, Plus, Edit, Eye, Power, RotateCcw, Trash2 } from 'lucide-react';
 import type { OperationalPostStatus, Post } from '@/lib/types';
 
 export function PostsPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const { posts, getStatus, loading, createPost, updatePost } = usePosts();
+  const postActiveFilter = activeFilter === 'all' ? 'all' : activeFilter === 'active';
+  const {
+    posts,
+    getStatus,
+    loading,
+    createPost,
+    updatePost,
+    deactivatePost,
+    reactivatePost,
+    deletePost,
+  } = usePosts({ active: postActiveFilter });
+  const { clients, loading: clientsLoading } = useClients({ active: true });
   const { employees } = useEmployees({ active: true });
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const clientOptions = clients.map(client => ({ value: client.id, label: client.name }));
+  const getClientName = (clientId: string) => clients.find(client => client.id === clientId)?.name ?? 'Cliente não encontrado';
 
   const handleCreatePost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -33,6 +48,7 @@ export function PostsPage() {
       const name = String(form.get('name') ?? '').trim();
       const address = String(form.get('address') ?? '').trim();
       const clientId = String(form.get('client_id') ?? '').trim();
+      const nfcUid = String(form.get('nfc_uid') ?? '').trim();
 
       const lat = Number(form.get('lat'));
       const lng = Number(form.get('lng'));
@@ -61,7 +77,7 @@ export function PostsPage() {
         require_ronda: form.get('require_ronda') === 'on',
         ronda_interval_minutes: rondaIntervalMinutes,
         indoor_mode: form.get('indoor_mode') === 'on',
-        nfc_uid: undefined,
+        nfc_uid: nfcUid || undefined,
         active: true,
       });
 
@@ -86,6 +102,7 @@ export function PostsPage() {
       const name = String(form.get('name') ?? '').trim();
       const address = String(form.get('address') ?? '').trim();
       const clientId = String(form.get('client_id') ?? '').trim();
+      const nfcUid = String(form.get('nfc_uid') ?? '').trim();
 
       const lat = Number(form.get('lat'));
       const lng = Number(form.get('lng'));
@@ -114,6 +131,7 @@ export function PostsPage() {
         require_ronda: form.get('require_ronda') === 'on',
         ronda_interval_minutes: rondaIntervalMinutes,
         indoor_mode: form.get('indoor_mode') === 'on',
+        nfc_uid: nfcUid || undefined,
       });
 
       setEditingPost(null);
@@ -124,12 +142,48 @@ export function PostsPage() {
     }
   };
 
+  const handleDeactivatePost = async (post: Post) => {
+    if (!window.confirm(`Desativar o posto "${post.name}"? Ele deixará de aparecer nos fluxos operacionais ativos.`)) return;
+
+    setActionLoading(post.id);
+    try {
+      await deactivatePost(post.id);
+      setSelectedPost(current => current?.id === post.id ? { ...current, active: false } : current);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReactivatePost = async (post: Post) => {
+    setActionLoading(post.id);
+    try {
+      await reactivatePost(post.id);
+      setSelectedPost(current => current?.id === post.id ? { ...current, active: true } : current);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeletePost = async (post: Post) => {
+    if (!window.confirm(`Excluir definitivamente o posto "${post.name}"? Use apenas para cadastro criado por engano.`)) return;
+
+    setActionLoading(post.id);
+    try {
+      await deletePost(post.id);
+      if (selectedPost?.id === post.id) setSelectedPost(null);
+      if (editingPost?.id === post.id) setEditingPost(null);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const columns = [
     {
       key: 'status',
       header: 'Status',
       render: (_: Post) => {
         const s = getStatus(_.id);
+        if (!_.active) return <Badge variant="default">Inativo</Badge>;
         return s ? <OperationalStatusBadge status={s.status} /> : <Badge variant="default">—</Badge>;
       },
     },
@@ -138,12 +192,20 @@ export function PostsPage() {
       header: 'Posto',
       render: (p: Post) => (
         <div>
-          <p className="font-medium text-gray-900">{p.name}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-gray-900">{p.name}</p>
+            {!p.active && <Badge variant="default">Inativo</Badge>}
+          </div>
           <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
             <MapPin className="w-3 h-3" /> {p.address}
           </p>
         </div>
       ),
+    },
+    {
+      key: 'client',
+      header: 'Cliente',
+      render: (p: Post) => <span className="text-sm text-gray-600">{getClientName(p.client_id)}</span>,
     },
     {
       key: 'staff',
@@ -183,7 +245,11 @@ export function PostsPage() {
       header: '',
       render: (p: Post) => (
         <div className="flex items-center gap-1">
-          <button onClick={(e) => { e.stopPropagation(); setSelectedPost(p); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600">
+          <button
+            onClick={(e) => { e.stopPropagation(); setSelectedPost(p); }}
+            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-blue-600"
+            title="Ver detalhes"
+          >
             <Eye className="w-4 h-4" />
           </button>
           <button
@@ -197,6 +263,33 @@ export function PostsPage() {
           >
             <Edit className="w-4 h-4" />
           </button>
+          {p.active ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); void handleDeactivatePost(p); }}
+              disabled={actionLoading === p.id}
+              className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-orange-600 disabled:opacity-50"
+              title="Desativar posto"
+            >
+              <Power className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); void handleReactivatePost(p); }}
+              disabled={actionLoading === p.id}
+              className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-green-600 disabled:opacity-50"
+              title="Reativar posto"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); void handleDeletePost(p); }}
+            disabled={actionLoading === p.id}
+            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-red-600 disabled:opacity-50"
+            title="Excluir posto"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       ),
     },
@@ -206,13 +299,22 @@ export function PostsPage() {
     <div>
       <PageHeader
         title="Postos"
-        subtitle={loading ? 'Carregando postos...' : `${posts.length} postos ativos`}
+        subtitle={loading ? 'Carregando postos...' : `${posts.length} posto(s) ${activeFilter === 'active' ? 'ativos' : activeFilter === 'inactive' ? 'inativos' : 'no total'}`}
         actions={
-          <Button onClick={() => setShowNewModal(true)}>
+          <Button onClick={() => setShowNewModal(true)} disabled={clientsLoading || clientOptions.length === 0}>
             <Plus className="w-4 h-4 mr-1" /> Novo Posto
           </Button>
         }
       />
+
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-gray-700">Filtrar:</span>
+          <Button size="sm" variant={activeFilter === 'active' ? 'primary' : 'secondary'} onClick={() => setActiveFilter('active')}>Ativos</Button>
+          <Button size="sm" variant={activeFilter === 'inactive' ? 'primary' : 'secondary'} onClick={() => setActiveFilter('inactive')}>Inativos</Button>
+          <Button size="sm" variant={activeFilter === 'all' ? 'primary' : 'secondary'} onClick={() => setActiveFilter('all')}>Todos</Button>
+        </div>
+      </Card>
 
       <Card padding={false}>
         <DataTable
@@ -220,13 +322,13 @@ export function PostsPage() {
           data={posts}
           keyExtractor={p => p.id}
           onRowClick={setSelectedPost}
-          emptyMessage={loading ? "Carregando postos..." : "Nenhum posto cadastrado"}
+          emptyMessage={loading ? "Carregando postos..." : "Nenhum posto encontrado para o filtro selecionado"}
         />
       </Card>
 
       {/* Post Details Modal */}
       <Modal open={!!selectedPost} onClose={() => setSelectedPost(null)} title="Detalhes do Posto" size="lg">
-        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} />}
+        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} getClientName={getClientName} />}
       </Modal>
 
 
@@ -264,10 +366,14 @@ export function PostsPage() {
               label="Cliente"
               required
               defaultValue={editingPost.client_id}
-              options={[
-                { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
-              ]}
+              options={clientOptions}
+              placeholder={clientsLoading ? 'Carregando clientes...' : 'Selecione...'}
             />
+            {clientOptions.length === 0 && !clientsLoading && (
+              <p className="text-xs text-red-600">Cadastre um cliente antes de vincular este posto.</p>
+            )}
+
+            <Input id="edit-post-nfc" name="nfc_uid" label="NFC UID" placeholder="Ex: 04:A1:B2:C3:D4" defaultValue={editingPost.nfc_uid ?? ''} />
 
             <div className="flex items-center gap-2">
               <input type="checkbox" id="edit-post-indoor" name="indoor_mode" className="rounded" defaultChecked={editingPost.indoor_mode} />
@@ -323,12 +429,15 @@ export function PostsPage() {
             id="post-client"
             name="client_id"
             label="Cliente"
-            placeholder="Selecione..."
+            placeholder={clientsLoading ? 'Carregando clientes...' : 'Selecione...'}
             required
-            options={[
-              { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
-            ]}
+            options={clientOptions}
           />
+          {clientOptions.length === 0 && !clientsLoading && (
+            <p className="text-xs text-red-600">Cadastre um cliente na página Clientes antes de criar um posto.</p>
+          )}
+
+          <Input id="post-nfc" name="nfc_uid" label="NFC UID" placeholder="Opcional — tag NFC física do posto" />
 
           <div className="flex items-center gap-2">
             <input type="checkbox" id="post-indoor" name="indoor_mode" className="rounded" />
@@ -359,7 +468,7 @@ export function PostsPage() {
   );
 }
 
-function PostDetails({ post, getStatus, getProfileName }: { post: Post; getStatus: (id: string) => OperationalPostStatus | undefined; getProfileName: (id: string) => string }) {
+function PostDetails({ post, getStatus, getProfileName, getClientName }: { post: Post; getStatus: (id: string) => OperationalPostStatus | undefined; getProfileName: (id: string) => string; getClientName: (id: string) => string }) {
   const status = getStatus(post.id);
 
   return (
@@ -378,6 +487,12 @@ function PostDetails({ post, getStatus, getProfileName }: { post: Post; getStatu
       </div>
 
       <div className="grid grid-cols-2 gap-4">
+        <InfoItem label="Cliente" icon={<Building2 className="w-4 h-4" />}>
+          {getClientName(post.client_id)}
+        </InfoItem>
+        <InfoItem label="Cadastro" icon={<Power className="w-4 h-4" />}>
+          {post.active ? 'Ativo' : 'Inativo'}
+        </InfoItem>
         <InfoItem label="GPS" icon={<MapPin className="w-4 h-4" />}>
           {post.lat.toFixed(4)}, {post.lng.toFixed(4)}
         </InfoItem>

@@ -2,12 +2,13 @@
 // OPERACIONAL5 — Página de Mapa Operacional
 // ============================================================
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader, Card, Badge } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
 import { usePosts } from '@/hooks';
 import { cn } from '@/lib/utils';
-import { MapPin, Navigation, Clock, Users, Siren } from 'lucide-react';
+import { Clock, ExternalLink, MapPin, Navigation, Siren, Users } from 'lucide-react';
 import type { OperationalStatus } from '@/lib/types';
 
 const STATUS_COLORS: Record<OperationalStatus, string> = {
@@ -20,8 +21,16 @@ const STATUS_COLORS: Record<OperationalStatus, string> = {
 };
 
 export function MapPage() {
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const initialPostId = searchParams.get('post_id');
+  const employeeIdFilter = searchParams.get('employee_id');
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(initialPostId);
+  const [mapMode, setMapMode] = useState<'real' | 'schematic'>('real');
   const { posts, statuses, loading } = usePosts();
+
+  useEffect(() => {
+    if (initialPostId) setSelectedPostId(initialPostId);
+  }, [initialPostId]);
 
   if (loading) {
     return (
@@ -48,19 +57,46 @@ export function MapPage() {
   const maxLat = Math.max(...lats) + 0.005;
   const minLng = Math.min(...lngs) - 0.005;
   const maxLng = Math.max(...lngs) + 0.005;
-  const latRange = maxLat - minLat;
-  const lngRange = maxLng - minLng;
+  const latRange = maxLat - minLat || 0.01;
+  const lngRange = maxLng - minLng || 0.01;
 
-  // Convert lat/lng to % position
+  const selectedPost = posts.find(p => p.id === selectedPostId) ?? null;
+  const mapEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minLng}%2C${minLat}%2C${maxLng}%2C${maxLat}&layer=mapnik`;
+  const externalMapUrl = selectedPost
+    ? `https://www.openstreetmap.org/?mlat=${selectedPost.lat}&mlon=${selectedPost.lng}#map=18/${selectedPost.lat}/${selectedPost.lng}`
+    : `https://www.openstreetmap.org/#map=16/${(minLat + maxLat) / 2}/${(minLng + maxLng) / 2}`;
+
+  // Convert lat/lng to % position over the same bbox used by OpenStreetMap.
   const toX = (lng: number) => ((lng - minLng) / lngRange) * 100;
   const toY = (lat: number) => (1 - (lat - minLat) / latRange) * 100;
+
+  const postOptions = useMemo(() => posts.map(post => ({ id: post.id, name: post.name })), [posts]);
 
   return (
     <div>
       <PageHeader
         title="Mapa Operacional"
-        subtitle={`${posts.length} postos ativos — visão em tempo real`}
+        subtitle={`${posts.length} postos ativos — mapa real com status operacional sobreposto`}
+        actions={
+          <a
+            href={externalMapUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Abrir mapa externo
+          </a>
+        }
       />
+
+      {employeeIdFilter && (
+        <Card className="mb-4 border-blue-100 bg-blue-50">
+          <p className="text-sm text-blue-800">
+            Filtro de funcionário recebido pela URL. A tela mostra os postos operacionais e permite abrir o mapa externo; a visualização individual por colaborador depende dos últimos registros de localização.
+          </p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Map Area */}
@@ -68,31 +104,50 @@ export function MapPage() {
           <Card padding={false} className="overflow-hidden">
             {/* Map Visualization */}
             <div className="relative bg-gradient-to-br from-green-50 via-blue-50 to-gray-100" style={{ height: '500px' }}>
-              {/* Grid overlay */}
-              <svg className="absolute inset-0 w-full h-full opacity-10">
-                <defs>
-                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#666" strokeWidth="0.5" />
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#grid)" />
-              </svg>
+              {mapMode === 'real' ? (
+                <iframe
+                  title="Mapa operacional OpenStreetMap"
+                  src={mapEmbedUrl}
+                  className="absolute inset-0 h-full w-full border-0 grayscale-[20%]"
+                  loading="lazy"
+                />
+              ) : (
+                <>
+                  {/* Grid overlay fallback */}
+                  <svg className="absolute inset-0 w-full h-full opacity-10">
+                    <defs>
+                      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#666" strokeWidth="0.5" />
+                      </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#grid)" />
+                  </svg>
+                  <svg className="absolute inset-0 w-full h-full opacity-20">
+                    <line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#888" strokeWidth="2" strokeDasharray="8,4" />
+                    <line x1="50%" y1="10%" x2="50%" y2="90%" stroke="#888" strokeWidth="2" strokeDasharray="8,4" />
+                    <line x1="20%" y1="20%" x2="80%" y2="80%" stroke="#aaa" strokeWidth="1" strokeDasharray="4,4" />
+                    <line x1="80%" y1="20%" x2="20%" y2="80%" stroke="#aaa" strokeWidth="1" strokeDasharray="4,4" />
+                  </svg>
+                </>
+              )}
 
-              {/* Roads simulation */}
-              <svg className="absolute inset-0 w-full h-full opacity-20">
-                <line x1="10%" y1="50%" x2="90%" y2="50%" stroke="#888" strokeWidth="2" strokeDasharray="8,4" />
-                <line x1="50%" y1="10%" x2="50%" y2="90%" stroke="#888" strokeWidth="2" strokeDasharray="8,4" />
-                <line x1="20%" y1="20%" x2="80%" y2="80%" stroke="#aaa" strokeWidth="1" strokeDasharray="4,4" />
-                <line x1="80%" y1="20%" x2="20%" y2="80%" stroke="#aaa" strokeWidth="1" strokeDasharray="4,4" />
-              </svg>
+              <div className="absolute left-4 top-4 z-20 flex items-center gap-2 rounded-lg border border-white/70 bg-white/95 p-1 shadow">
+                <button
+                  type="button"
+                  onClick={() => setMapMode('real')}
+                  className={cn('rounded-md px-3 py-1.5 text-xs font-semibold', mapMode === 'real' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100')}
+                >
+                  Mapa real
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapMode('schematic')}
+                  className={cn('rounded-md px-3 py-1.5 text-xs font-semibold', mapMode === 'schematic' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100')}
+                >
+                  Esquemático
+                </button>
+              </div>
 
-              {/* Street labels */}
-              <div className="absolute top-[48%] left-[8%] text-xs text-gray-400 font-medium transform -rotate-2">
-                R. Augusta →
-              </div>
-              <div className="absolute top-[8%] left-[48%] text-xs text-gray-400 font-medium transform -rotate-90">
-                Av. Paulista →
-              </div>
 
               {/* Post Markers */}
               {posts.map((post) => {
@@ -188,6 +243,20 @@ export function MapPage() {
                 <Navigation className="w-6 h-6 text-gray-600" />
               </div>
 
+              <div className="absolute right-4 top-16 z-20 rounded-lg border bg-white/95 p-2 shadow">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Selecionar posto</label>
+                <select
+                  value={selectedPostId ?? ''}
+                  onChange={event => setSelectedPostId(event.target.value || null)}
+                  className="w-48 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Todos os postos</option>
+                  {postOptions.map(post => (
+                    <option key={post.id} value={post.id}>{post.name}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Scale */}
               <div className="absolute bottom-4 right-4 bg-white/95 rounded-lg px-3 py-1.5 shadow border">
                 <div className="flex items-center gap-2">
@@ -258,6 +327,16 @@ export function MapPage() {
                       <Clock className="w-3 h-3" />
                       Turno: {status.current_shift_start ? new Date(status.current_shift_start).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'} — {status.current_shift_end ? new Date(status.current_shift_end).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}
                     </div>
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${post.lat}&mlon=${post.lng}#map=18/${post.lat}/${post.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={event => event.stopPropagation()}
+                      className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Abrir no mapa real
+                    </a>
                     <div className="flex items-center gap-2 mt-2">
                       <Badge variant={post.indoor_mode ? 'warning' : 'success'}>
                         {post.indoor_mode ? 'Indoor' : 'Outdoor'}

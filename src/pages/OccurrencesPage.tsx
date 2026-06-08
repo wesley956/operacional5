@@ -5,9 +5,11 @@
 import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
+import { useAuth, useProfile } from '@/context/AuthContext';
 import { SeverityBadge } from '@/components/DashboardComponents';
 import { useEmployees, useOccurrences, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import {
   OCCURRENCE_TYPE_LABELS, SEVERITY_LABELS,
   type Occurrence, type OccurrenceType, type OccurrenceStatus, type Severity,
@@ -28,6 +30,77 @@ const OCCURRENCE_ICONS: Record<OccurrenceType, React.ReactNode> = {
   sos: <Siren className="w-4 h-4 text-red-600" />,
 };
 
+
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo de evidência.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function validateEvidenceFile(file: File) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Use uma foto JPEG, PNG ou WebP como evidência.');
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('A evidência deve ter no máximo 5MB.');
+  }
+}
+
+function hasSelectedFile(value: FormDataEntryValue | null): value is File {
+  return value instanceof File && value.size > 0;
+}
+
+function getSafeEvidenceExtension(file: File): 'jpg' | 'jpeg' | 'png' | 'webp' {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'jpg' || extension === 'jpeg' || extension === 'png' || extension === 'webp') {
+    return extension;
+  }
+  if (file.type === 'image/png') return 'png';
+  if (file.type === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
+function makeEvidencePath(companyId: string, actorId: string, file: File): string {
+  const extension = getSafeEvidenceExtension(file);
+  const uniqueId = makeIdempotencyKey();
+  return `${companyId}/occurrences/${actorId}/${Date.now()}-${uniqueId}.${extension}`;
+}
+
+function canPreviewEvidence(photoUrl: string): boolean {
+  return photoUrl.startsWith('data:image/') || photoUrl.startsWith('http://') || photoUrl.startsWith('https://');
+}
+
+async function uploadEvidenceFile(
+  file: File,
+  companyId: string,
+  actorId: string,
+  mode: 'demo' | 'supabase'
+): Promise<string> {
+  validateEvidenceFile(file);
+
+  if (mode === 'demo') {
+    return readFileAsDataUrl(file);
+  }
+
+  const supabase = getSupabaseClient();
+  const path = makeEvidencePath(companyId, actorId, file);
+  const { error } = await supabase.storage
+    .from('evidence')
+    .upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    });
+
+  if (error) throw new Error(`Erro ao enviar evidência: ${error.message}`);
+  return path;
+}
 
 function makeIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -52,8 +125,20 @@ export function OccurrencesPage() {
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [actionLoading, setActionLoading] = useState<'ack' | 'resolve' | 'close_sos' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const { occurrences, loading, createOccurrence } = useOccurrences();
+  const profile = useProfile();
+  const { mode } = useAuth();
+  const {
+    occurrences,
+    loading,
+    createOccurrence,
+    acknowledgeOccurrence,
+    resolveOccurrence,
+    closeSOSOccurrence,
+  } = useOccurrences();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
@@ -82,7 +167,8 @@ export function OccurrencesPage() {
       const type = String(form.get('type') ?? '').trim() as OccurrenceType;
       const severity = String(form.get('severity') ?? '').trim() as Severity;
       const description = String(form.get('description') ?? '').trim();
-      const photoUrl = String(form.get('photo_url') ?? '').trim();
+      const manualPhotoUrl = String(form.get('photo_url') ?? '').trim();
+      const photoFile = form.get('photo_file');
       const latValue = String(form.get('lat') ?? '').trim();
       const lngValue = String(form.get('lng') ?? '').trim();
 
@@ -97,6 +183,12 @@ export function OccurrencesPage() {
 
       if (latValue && !Number.isFinite(lat)) throw new Error('Latitude inválida.');
       if (lngValue && !Number.isFinite(lng)) throw new Error('Longitude inválida.');
+
+      const uploadedPhotoUrl = hasSelectedFile(photoFile)
+        ? await uploadEvidenceFile(photoFile, profile.company_id, profile.id, mode)
+        : undefined;
+
+      const photoUrl = uploadedPhotoUrl ?? manualPhotoUrl;
 
       const occurrence = await createOccurrence({
         employee_id: employeeId,
@@ -117,6 +209,32 @@ export function OccurrencesPage() {
       setCreateError(error instanceof Error ? error.message : 'Erro ao registrar ocorrência.');
     } finally {
       setCreating(false);
+    }
+  };
+
+
+  const handleOccurrenceAction = async (action: 'ack' | 'resolve' | 'close_sos') => {
+    if (!selected) return;
+
+    setActionLoading(action);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      if (action === 'ack') {
+        await acknowledgeOccurrence(selected.id, profile.role);
+        setActionSuccess('Ciência registrada e ocorrência movida para em tratamento.');
+      } else if (action === 'resolve') {
+        await resolveOccurrence(selected.id, profile.id);
+        setActionSuccess('Ocorrência resolvida com sucesso.');
+      } else {
+        await closeSOSOccurrence(selected.id, profile.id, 'SOS encerrado pela central web.');
+        setActionSuccess('SOS encerrado com sucesso.');
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível concluir a ação.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -214,6 +332,18 @@ export function OccurrencesPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
+
       <Card padding={false}>
         <DataTable
           columns={columns}
@@ -272,12 +402,20 @@ export function OccurrencesPage() {
             {selected.photo_url && (
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-1">Evidência Fotográfica</h4>
-                <div className="bg-gray-100 rounded-lg h-48 flex items-center justify-center">
-                  <div className="text-center text-gray-400">
-                    <Camera className="w-8 h-8 mx-auto mb-1" />
-                    <p className="text-xs">Foto armazenada no bucket privado</p>
-                    <p className="text-xs">{selected.photo_url}</p>
-                  </div>
+                <div className="bg-gray-100 rounded-lg min-h-48 flex items-center justify-center overflow-hidden">
+                  {canPreviewEvidence(selected.photo_url) ? (
+                    <img
+                      src={selected.photo_url}
+                      alt="Evidência fotográfica da ocorrência"
+                      className="max-h-72 w-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-center text-gray-400 p-4">
+                      <Camera className="w-8 h-8 mx-auto mb-1" />
+                      <p className="text-xs">Foto armazenada no bucket privado evidence</p>
+                      <p className="text-xs break-all">{selected.photo_url}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -291,17 +429,31 @@ export function OccurrencesPage() {
 
             <div className="flex gap-2 pt-2 border-t border-gray-100">
               {selected.status === 'aberta' && (
-                <Button>
+                <Button
+                  onClick={() => void handleOccurrenceAction('ack')}
+                  loading={actionLoading === 'ack'}
+                  disabled={actionLoading !== null}
+                >
                   <CheckCircle className="w-4 h-4 mr-1" /> Marcar Ciência
                 </Button>
               )}
               {(selected.status === 'aberta' || selected.status === 'em_tratamento') && (
-                <Button variant="secondary">
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleOccurrenceAction('resolve')}
+                  loading={actionLoading === 'resolve'}
+                  disabled={actionLoading !== null}
+                >
                   Resolver Ocorrência
                 </Button>
               )}
-              {selected.type === 'sos' && (
-                <Button variant="danger">
+              {selected.type === 'sos' && selected.status !== 'resolvida' && (
+                <Button
+                  variant="danger"
+                  onClick={() => void handleOccurrenceAction('close_sos')}
+                  loading={actionLoading === 'close_sos'}
+                  disabled={actionLoading !== null}
+                >
                   Encerrar SOS
                 </Button>
               )}
@@ -373,11 +525,24 @@ export function OccurrencesPage() {
           />
 
           <Input
+            id="occ-photo-file"
+            name="photo_file"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            label="Enviar evidência/foto (opcional)"
+          />
+
+          <Input
             id="occ-photo-url"
             name="photo_url"
-            label="URL da evidência/foto (opcional)"
-            placeholder="Caminho do arquivo no bucket evidence"
+            label="Caminho/URL já existente da evidência (opcional)"
+            placeholder="evidence/company_id/arquivo.jpg ou URL externa"
           />
+
+          <p className="text-xs text-gray-500">
+            Ao selecionar uma foto, o sistema envia para o bucket privado <code>evidence</code> antes de registrar a ocorrência.
+            Em modo demo, a prévia fica salva como Data URL local.
+          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input id="occ-lat" name="lat" label="Latitude (opcional)" type="number" step="any" placeholder="-23.5505" />

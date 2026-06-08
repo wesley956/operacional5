@@ -5,19 +5,64 @@
 import { useEffect, useState, useCallback } from 'react';
 import { getDataProvider } from '@/lib/data/data-provider';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { useProfile } from '@/context/AuthContext';
+import { useAuth, useProfile } from '@/context/AuthContext';
 import { getPermissions } from '@/lib/utils';
 import type {
-  Post, Profile, Role, Presence, Occurrence, FTRequest,
+  Post, Profile, Role, Presence, Occurrence, FTRequest, Client,
   OperationalPostStatus, DashboardSummary, Schedule,
 } from '@/lib/types';
 import type {
-  PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
+  ClientFilters, CreateClientInput, PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
   FTFilters, HandoverFilters, NotificationFilters, ScheduleFilters,
   ConfirmPresenceInput, CreateOccurrenceInput, TriggerSOSInput, OpenFTInput,
-  PresenceResult, RondaPointData, RondaLogData, HandoverData,
-  ReportData, NotificationData,
+  PresenceResult, RondaPointData, RondaLogData, CreateRondaPointInput, HandoverData,
+  ReportData, NotificationData, CreateHandoverInput, AuditEntryData, AuditFilters,
 } from '@/lib/data/data-provider';
+
+
+// ==================== USE CLIENTS ====================
+export function useClients(filters?: ClientFilters) {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const profile = useProfile();
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.clients.list(filters);
+      setClients(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const createClient = useCallback(async (
+    data: Omit<CreateClientInput, 'company_id'> & { company_id?: string }
+  ): Promise<Client> => {
+    const dp = getDataProvider();
+    const client = await dp.clients.create({
+      ...data,
+      company_id: data.company_id ?? profile.company_id,
+    });
+    await refresh();
+    return client;
+  }, [profile.company_id, refresh]);
+
+  const updateClient = useCallback(async (id: string, data: Partial<CreateClientInput>): Promise<Client> => {
+    const dp = getDataProvider();
+    const client = await dp.clients.update(id, data);
+    await refresh();
+    return client;
+  }, [refresh]);
+
+  return { clients, loading, refresh, createClient, updateClient };
+}
 
 // ==================== USE POSTS ====================
 export function usePosts(filters?: PostFilters) {
@@ -70,9 +115,31 @@ export function usePosts(filters?: PostFilters) {
     return post;
   }, [refresh]);
 
+  const deactivatePost = useCallback((id: string): Promise<Post> => updatePost(id, { active: false }), [updatePost]);
+
+  const reactivatePost = useCallback((id: string): Promise<Post> => updatePost(id, { active: true }), [updatePost]);
+
+  const deletePost = useCallback(async (id: string): Promise<void> => {
+    const dp = getDataProvider();
+    await dp.posts.delete(id);
+    await refresh();
+  }, [refresh]);
+
   const getStatus = (postId: string) => statuses.find(s => s.post_id === postId);
 
-  return { posts, statuses, getStatus, loading, permissions, refresh, createPost, updatePost };
+  return {
+    posts,
+    statuses,
+    getStatus,
+    loading,
+    permissions,
+    refresh,
+    createPost,
+    updatePost,
+    deactivatePost,
+    reactivatePost,
+    deletePost,
+  };
 }
 
 // ==================== USE EMPLOYEES ====================
@@ -144,7 +211,28 @@ export function useEmployees(filters?: EmployeeFilters) {
     return createdProfile;
   }, [refresh]);
 
-  return { employees, loading, refresh, createEmployee };
+  const updateEmployee = useCallback(async (id: string, data: Partial<Profile>): Promise<Profile> => {
+    const dp = getDataProvider();
+    const updatedProfile = await dp.employees.update(id, data);
+
+    setEmployees(current => {
+      const next = current.map(employee => employee.id === id ? updatedProfile : employee);
+      const shouldKeep = filters?.active === undefined || updatedProfile.active === filters.active;
+
+      if (!current.some(employee => employee.id === id) && shouldKeep) {
+        next.push(updatedProfile);
+      }
+
+      return next
+        .filter(employee => filters?.active === undefined || employee.active === filters.active)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    await refresh();
+    return updatedProfile;
+  }, [refresh, filterKey]);
+
+  return { employees, loading, refresh, createEmployee, updateEmployee };
 }
 
 // ==================== USE PRESENCE ====================
@@ -181,28 +269,60 @@ export function usePresence(filters?: PresenceFilters) {
 export function useOccurrences(filters?: OccurrenceFilters) {
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.occurrences.list(filters);
+      setOccurrences(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.occurrences.list(filters);
-        setOccurrences(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
   const createOccurrence = useCallback(async (input: CreateOccurrenceInput): Promise<Occurrence> => {
     const dp = getDataProvider();
     const occ = await dp.occurrences.create(input);
-    const data = await dp.occurrences.list(filters);
-    setOccurrences(data);
+    await refresh();
     return occ;
-  }, [JSON.stringify(filters)]);
+  }, [refresh]);
 
-  return { occurrences, loading, createOccurrence };
+  const acknowledgeOccurrence = useCallback(async (id: string, role: Role): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.occurrences.acknowledge(id, role);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  const resolveOccurrence = useCallback(async (id: string, resolvedBy: string): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.occurrences.resolve(id, resolvedBy);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  const closeSOSOccurrence = useCallback(async (id: string, closedBy: string, resolution: string): Promise<Occurrence> => {
+    const dp = getDataProvider();
+    const occ = await dp.sos.close(id, closedBy, resolution);
+    await refresh();
+    return occ;
+  }, [refresh]);
+
+  return {
+    occurrences,
+    loading,
+    refresh,
+    createOccurrence,
+    acknowledgeOccurrence,
+    resolveOccurrence,
+    closeSOSOccurrence,
+  };
 }
 
 // ==================== USE SOS ====================
@@ -242,31 +362,56 @@ export function useFT(filters?: FTFilters) {
   const [fts, setFts] = useState<FTRequest[]>([]);
   const [candidates, setCandidates] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [ftData, candData] = await Promise.all([
+        dp.ft.list(filters),
+        dp.employees.getAvailableForFT(),
+      ]);
+      setFts(ftData);
+      setCandidates(candData);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [ftData, candData] = await Promise.all([
-          dp.ft.list(filters),
-          dp.employees.getAvailableForFT(),
-        ]);
-        setFts(ftData);
-        setCandidates(candData);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
   const openFT = useCallback(async (input: OpenFTInput): Promise<FTRequest> => {
     const dp = getDataProvider();
     const ft = await dp.ft.open(input);
-    setFts(await dp.ft.list(filters));
+    await refresh();
     return ft;
-  }, [JSON.stringify(filters)]);
+  }, [refresh]);
 
-  return { fts, candidates, loading, openFT };
+  const assignFT = useCallback(async (ftId: string, employeeId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.assign(ftId, employeeId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  const resolveFT = useCallback(async (ftId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.resolve(ftId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  const cancelFT = useCallback(async (ftId: string): Promise<FTRequest> => {
+    const dp = getDataProvider();
+    const ft = await dp.ft.cancel(ftId);
+    await refresh();
+    return ft;
+  }, [refresh]);
+
+  return { fts, candidates, loading, refresh, openFT, assignFT, resolveFT, cancelFT };
 }
 
 // ==================== USE RONDAS ====================
@@ -275,43 +420,111 @@ export function useRondas(postId?: string) {
   const [logs, setLogs] = useState<RondaLogData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [ptData, logData] = await Promise.all([
-          postId ? dp.ronda.getPoints(postId) : Promise.resolve([]),
-          dp.ronda.getLogs(postId ? { post_id: postId } : undefined),
-        ]);
-        setPoints(ptData);
-        setLogs(logData);
-      } finally { setLoading(false); }
-    };
-    load();
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [posts, logData] = await Promise.all([
+        postId ? Promise.resolve([]) : dp.posts.list({ active: true }),
+        dp.ronda.getLogs(postId ? { post_id: postId } : undefined),
+      ]);
+
+      const pointData = postId
+        ? await dp.ronda.getPoints(postId)
+        : (await Promise.all(posts.map(post => dp.ronda.getPoints(post.id)))).flat();
+
+      setPoints(pointData);
+      setLogs(logData);
+    } finally {
+      setLoading(false);
+    }
   }, [postId]);
 
-  return { points, logs, loading };
+  const createPoint = useCallback(async (input: CreateRondaPointInput): Promise<RondaPointData> => {
+    const dp = getDataProvider();
+    const point = await dp.ronda.createPoint(input);
+    await refresh();
+    return point;
+  }, [refresh]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { points, logs, loading, refresh, createPoint };
+}
+
+// ==================== USE AUDIT LOG ====================
+export function useAuditLog(filters?: AuditFilters) {
+  const [entries, setEntries] = useState<AuditEntryData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const profile = useProfile();
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.audit.list({
+        company_id: filters?.company_id ?? profile.company_id,
+        ...filters,
+      });
+      setEntries(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey, profile.company_id]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { entries, loading, refresh };
 }
 
 // ==================== USE HANDOVERS ====================
 export function useHandovers(filters?: HandoverFilters) {
   const [handovers, setHandovers] = useState<HandoverData[]>([]);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.handover.list(filters);
+      setHandovers(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const data = await dp.handover.list(filters);
-        setHandovers(data);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [JSON.stringify(filters)]);
+    void refresh();
+  }, [refresh]);
 
-  return { handovers, loading };
+  const createHandover = useCallback(async (input: CreateHandoverInput): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.create(input);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  const confirmHandover = useCallback(async (id: string): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.confirm(id);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  const reportRetention = useCallback(async (id: string, reason: string): Promise<HandoverData> => {
+    const dp = getDataProvider();
+    const handover = await dp.handover.reportRetention(id, reason);
+    await refresh();
+    return handover;
+  }, [refresh]);
+
+  return { handovers, loading, refresh, createHandover, confirmHandover, reportRetention };
 }
 
 // ==================== USE REPORTS ====================
@@ -347,46 +560,69 @@ export function useNotifications(filters?: NotificationFilters) {
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const filterKey = JSON.stringify(filters);
+  const { mode } = useAuth();
+
+  const refresh = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const [data, count] = await Promise.all([
+        dp.notifications.list(filters),
+        dp.notifications.getUnreadCount(),
+      ]);
+      setNotifications(data);
+      setUnreadCount(count);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [data, count] = await Promise.all([
-          dp.notifications.list(filters),
-          dp.notifications.getUnreadCount(),
-        ]);
-        setNotifications(data);
-        setUnreadCount(count);
-      } finally { setLoading(false); }
+    void refresh(true);
+
+    const interval = window.setInterval(() => {
+      void refresh(false);
+    }, 30_000);
+
+    const handleFocus = () => void refresh(false);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refresh(false);
     };
-    load();
-  }, [JSON.stringify(filters)]);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const channel = mode === 'demo'
+      ? null
+      : getSupabaseClient()
+        .channel('notifications-alert-log-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, () => {
+          void refresh(false);
+        })
+        .subscribe();
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (channel) void getSupabaseClient().removeChannel(channel);
+    };
+  }, [mode, refresh]);
 
   const markAsRead = useCallback(async (id: string) => {
     const dp = getDataProvider();
     await dp.notifications.markAsRead(id);
-    const [data, count] = await Promise.all([
-      dp.notifications.list(filters),
-      dp.notifications.getUnreadCount(),
-    ]);
-    setNotifications(data);
-    setUnreadCount(count);
-  }, [JSON.stringify(filters)]);
+    await refresh(false);
+  }, [refresh]);
 
   const markAllRead = useCallback(async () => {
     const dp = getDataProvider();
     await dp.notifications.markAllRead();
-    const [data, count] = await Promise.all([
-      dp.notifications.list(filters),
-      dp.notifications.getUnreadCount(),
-    ]);
-    setNotifications(data);
-    setUnreadCount(count);
-  }, [JSON.stringify(filters)]);
+    await refresh(false);
+  }, [refresh]);
 
-  return { notifications, unreadCount, loading, markAsRead, markAllRead };
+  return { notifications, unreadCount, loading, refresh, markAsRead, markAllRead };
 }
 
 // ==================== USE SCHEDULES ====================
@@ -431,7 +667,53 @@ export function useSchedules(filters?: ScheduleFilters) {
     return schedule;
   }, [profile.company_id, refresh]);
 
-  return { schedules, loading, refresh, createSchedule };
+  const updateSchedule = useCallback(async (
+    id: string,
+    data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>
+  ): Promise<Schedule> => {
+    const dp = getDataProvider();
+    const schedule = await dp.schedules.update(id, data);
+    setSchedules(current => current
+      .map(item => (item.id === id ? schedule : item))
+      .sort((a, b) => new Date(a.shift_start).getTime() - new Date(b.shift_start).getTime())
+    );
+    await refresh();
+    return schedule;
+  }, [refresh]);
+
+  const deactivateSchedule = useCallback((id: string): Promise<Schedule> => updateSchedule(id, {
+    is_active: false,
+    status: 'inactive',
+  }), [updateSchedule]);
+
+  const reactivateSchedule = useCallback((id: string): Promise<Schedule> => updateSchedule(id, {
+    is_active: true,
+    status: 'active',
+  }), [updateSchedule]);
+
+  const deleteSchedule = useCallback(async (id: string): Promise<void> => {
+    const dp = getDataProvider();
+    await dp.schedules.delete(id);
+    setSchedules(current => current.filter(item => item.id !== id));
+    await refresh();
+  }, [refresh]);
+
+  const detectConflicts = useCallback(async (employeeId: string) => {
+    const dp = getDataProvider();
+    return dp.schedules.detectConflicts(employeeId);
+  }, []);
+
+  return {
+    schedules,
+    loading,
+    refresh,
+    createSchedule,
+    updateSchedule,
+    deactivateSchedule,
+    reactivateSchedule,
+    deleteSchedule,
+    detectConflicts,
+  };
 }
 
 // ==================== USE OFFLINE STATUS ====================
@@ -460,36 +742,71 @@ export function usePermissions() {
 }
 
 // ==================== USE DASHBOARD ====================
+const DASHBOARD_AUTO_REFRESH_MS = 30_000;
+
 export function useRealtimeDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [postStatuses, setStatuses] = useState<OperationalPostStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const { mode } = useAuth();
+
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
+
+    try {
+      const dp = getDataProvider();
+      const [sum, statuses] = await Promise.all([
+        dp.reports.getDashboardSummary(),
+        dp.posts.getOperationalStatuses(),
+      ]);
+      setSummary(sum);
+      setStatuses(statuses);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [sum, statuses] = await Promise.all([
-          dp.reports.getDashboardSummary(),
-          dp.posts.getOperationalStatuses(),
-        ]);
-        setSummary(sum);
-        setStatuses(statuses);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, []);
+    void refresh();
 
-  const refresh = useCallback(async () => {
-    const dp = getDataProvider();
-    const [sum, statuses] = await Promise.all([
-      dp.reports.getDashboardSummary(),
-      dp.posts.getOperationalStatuses(),
-    ]);
-    setSummary(sum);
-    setStatuses(statuses);
-  }, []);
+    const interval = window.setInterval(() => {
+      void refresh({ silent: true });
+    }, DASHBOARD_AUTO_REFRESH_MS);
+
+    const handleFocus = () => {
+      void refresh({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    let realtimeTimer: number | undefined;
+    const scheduleRealtimeRefresh = () => {
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      realtimeTimer = window.setTimeout(() => {
+        void refresh({ silent: true });
+      }, 500);
+    };
+
+    const channel = mode === 'demo'
+      ? null
+      : getSupabaseClient()
+        .channel('operational-dashboard-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_log' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ft_requests' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, scheduleRealtimeRefresh)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, scheduleRealtimeRefresh)
+        .subscribe();
+
+    return () => {
+      window.clearInterval(interval);
+      if (realtimeTimer) window.clearTimeout(realtimeTimer);
+      window.removeEventListener('focus', handleFocus);
+      if (channel) void getSupabaseClient().removeChannel(channel);
+    };
+  }, [mode, refresh]);
 
   return { summary, postStatuses, loading, refresh };
 }

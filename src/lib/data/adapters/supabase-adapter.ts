@@ -10,6 +10,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import type {
   IDataProvider,
+  ClientFilters,
+  CreateClientInput,
   PostFilters,
   EmployeeFilters,
   PresenceFilters,
@@ -29,6 +31,7 @@ import type {
   NotificationData,
   RondaPointData,
   RondaLogData,
+  CreateRondaPointInput,
   ConfirmRondaInput,
   HandoverData,
   CreateHandoverInput,
@@ -38,6 +41,7 @@ import type {
 } from '../data-provider';
 import { checkGeofence, haversineDistance } from '../../geo';
 import type {
+  Client,
   DashboardSummary,
   FTRequest,
   Occurrence,
@@ -57,6 +61,11 @@ function assertNoError(error: unknown, context: string): void {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${context}: ${message}`);
   }
+}
+
+
+function asClient(row: DbRow): Client {
+  return row as unknown as Client;
 }
 
 function asPost(row: DbRow): Post {
@@ -197,6 +206,78 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
   console.log(`[OP5] Supabase adapter initialized for: ${url.substring(0, 30)}...`);
 
   return {
+    clients: {
+      async list(filters?: ClientFilters): Promise<Client[]> {
+        let query = supabase
+          .from('clients')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (filters?.company_id) query = query.eq('company_id', filters.company_id);
+
+        if (filters?.active !== undefined) {
+          query = query.eq('active', filters.active);
+        } else {
+          query = query.eq('active', true);
+        }
+
+        if (filters?.search) {
+          const term = filters.search.replace(/[%_,]/g, '').trim();
+          if (term) {
+            query = query.or(`name.ilike.%${term}%,cnpj.ilike.%${term}%,contact_name.ilike.%${term}%,contact_email.ilike.%${term}%`);
+          }
+        }
+
+        const { data, error } = await query;
+        assertNoError(error, 'Erro ao listar clientes');
+        return ((data ?? []) as DbRow[]).map(asClient);
+      },
+
+      async getById(id: string): Promise<Client | null> {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        assertNoError(error, 'Erro ao buscar cliente');
+        return data ? asClient(data as DbRow) : null;
+      },
+
+      async create(data: CreateClientInput): Promise<Client> {
+        const { data: row, error } = await supabase
+          .from('clients')
+          .insert({
+            company_id: data.company_id,
+            name: data.name,
+            cnpj: data.cnpj,
+            contact_name: data.contact_name,
+            contact_phone: data.contact_phone,
+            contact_email: data.contact_email,
+            address: data.address,
+            notes: data.notes,
+            active: data.active ?? true,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar cliente');
+        return asClient(row as DbRow);
+      },
+
+      async update(id: string, data: Partial<CreateClientInput>): Promise<Client> {
+        const { data: row, error } = await supabase
+          .from('clients')
+          .update({ ...data, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao atualizar cliente');
+        return asClient(row as DbRow);
+      },
+    },
+
     posts: {
       async list(filters?: PostFilters): Promise<Post[]> {
         let query = supabase.from('posts').select('*').order('name', { ascending: true });
@@ -204,10 +285,10 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         if (filters?.company_id) query = query.eq('company_id', filters.company_id);
         if (filters?.client_id) query = query.eq('client_id', filters.client_id);
 
-        if (filters?.active !== undefined) {
-          query = query.eq('active', filters.active);
-        } else {
+        if (filters?.active === undefined) {
           query = query.eq('active', true);
+        } else if (filters.active !== 'all') {
+          query = query.eq('active', filters.active);
         }
 
         const { data, error } = await query;
@@ -247,6 +328,15 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
 
         assertNoError(error, 'Erro ao atualizar posto');
         return asPost(row as DbRow);
+      },
+
+      async delete(id: string): Promise<void> {
+        const { error } = await supabase
+          .from('posts')
+          .delete()
+          .eq('id', id);
+
+        assertNoError(error, 'Erro ao excluir posto');
       },
 
       async getOperationalStatuses(): Promise<OperationalPostStatus[]> {
@@ -939,6 +1029,28 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         return ((data ?? []) as DbRow[]).map(asRondaPoint);
       },
 
+      async createPoint(input: CreateRondaPointInput): Promise<RondaPointData> {
+        const { data, error } = await supabase
+          .from('ronda_points')
+          .insert({
+            post_id: input.post_id,
+            name: input.name,
+            lat: input.lat,
+            lng: input.lng,
+            radius_meters: input.radius_meters ?? 20,
+            sequence_order: input.sequence_order ?? 0,
+            require_photo: input.require_photo ?? false,
+            qr_code_token: input.qr_code_token,
+            nfc_uid: input.nfc_uid || null,
+            active: true,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar ponto de ronda');
+        return asRondaPoint(data as DbRow);
+      },
+
       async getLogs(filters?: RondaFilters): Promise<RondaLogData[]> {
         const filtersMeta = filters as RondaFilters & {
           date_from?: string;
@@ -1355,6 +1467,39 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
 
         assertNoError(error, 'Erro ao criar escala');
         return asSchedule(row as DbRow);
+      },
+
+      async update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule> {
+        const payload: Record<string, unknown> = {};
+        if (data.post_id !== undefined) payload.post_id = data.post_id;
+        if (data.employee_id !== undefined) payload.employee_id = data.employee_id;
+        if (data.shift_start !== undefined) payload.shift_start = data.shift_start;
+        if (data.shift_end !== undefined) payload.shift_end = data.shift_end;
+        if (data.regime !== undefined) payload.regime = data.regime;
+        if (data.cycle_reference_date !== undefined) payload.cycle_reference_date = data.cycle_reference_date;
+        if (data.weekdays !== undefined) payload.weekdays = data.weekdays;
+        if (data.template_id !== undefined) payload.template_id = data.template_id;
+        if (data.is_active !== undefined) payload.is_active = data.is_active;
+        if (data.status !== undefined) payload.status = data.status;
+
+        const { data: row, error } = await supabase
+          .from('schedules')
+          .update(payload)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao atualizar escala');
+        return asSchedule(row as DbRow);
+      },
+
+      async delete(id: string): Promise<void> {
+        const { error } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('id', id);
+
+        assertNoError(error, 'Erro ao excluir escala');
       },
 
       async detectConflicts(employeeId: string): Promise<ScheduleConflictData[]> {

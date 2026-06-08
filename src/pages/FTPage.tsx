@@ -2,14 +2,20 @@
 // OPERACIONAL5 — Página de Força Tarefa (FT)
 // ============================================================
 
-import { useState } from 'react';
-import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField } from '@/components/ui';
+import { useState, type FormEvent } from 'react';
+import { PageHeader, Card, Badge, DataTable, Modal, Button, SelectField, Textarea } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { SeverityBadge } from '@/components/DashboardComponents';
+import { useProfile } from '@/context/AuthContext';
 import { useEmployees, useFT, usePosts } from '@/hooks';
 import { formatDateTime, formatRelativeTime } from '@/lib/utils';
-import { type FTRequest, type FTRequestStatus } from '@/lib/types';
-import { Siren, Users, Clock, CheckCircle, Phone, MapPin, Plus } from 'lucide-react';
+import {
+  type FTReason,
+  type FTRequest,
+  type FTRequestStatus,
+  type Severity,
+} from '@/lib/types';
+import { Siren, Users, Clock, CheckCircle, Phone, MapPin, Plus, XCircle } from 'lucide-react';
 
 const FT_STATUS_BADGES: Record<FTRequestStatus, 'danger' | 'warning' | 'info' | 'success' | 'default'> = {
   aberta: 'danger',
@@ -19,17 +25,147 @@ const FT_STATUS_BADGES: Record<FTRequestStatus, 'danger' | 'warning' | 'info' | 
   cancelada: 'default',
 };
 
+const FT_REASON_OPTIONS: { value: FTReason; label: string }[] = [
+  { value: 'ausencia', label: 'Ausência' },
+  { value: 'atraso', label: 'Atraso' },
+  { value: 'retencao', label: 'Retenção' },
+  { value: 'preventiva', label: 'Preventiva' },
+];
+
+const FT_URGENCY_OPTIONS: { value: Severity; label: string }[] = [
+  { value: 'baixa', label: 'Baixa' },
+  { value: 'media', label: 'Média' },
+  { value: 'alta', label: 'Alta' },
+  { value: 'critica', label: 'Crítica' },
+];
+
 export function FTPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [assigningFtId, setAssigningFtId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const { fts: ftRequests, candidates: availableEmployees, loading } = useFT();
+  const profile = useProfile();
+  const {
+    fts: ftRequests,
+    candidates: availableEmployees,
+    loading,
+    openFT,
+    assignFT,
+    resolveFT,
+    cancelFT,
+  } = useFT();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
+  const activePosts = posts.filter(post => post.active !== false);
+  const selected = selectedId ? ftRequests.find(f => f.id === selectedId) : null;
+  const assigningFt = assigningFtId ? ftRequests.find(f => f.id === assigningFtId) : null;
+
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
   const getPostName = (postId: string) => posts.find(p => p.id === postId)?.name ?? 'Posto não encontrado';
-  const selected = selectedId ? ftRequests.find(f => f.id === selectedId) : null;
+  const getEmployeePhone = (profileId?: string) => employees.find(e => e.id === profileId)?.phone;
+
+  const clearMessages = () => {
+    setActionError(null);
+    setActionSuccess(null);
+  };
+
+  const handleOpenFT = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearMessages();
+    setActionLoading('open');
+
+    try {
+      const form = new FormData(event.currentTarget);
+      const postId = String(form.get('post_id') ?? '').trim();
+      const reason = String(form.get('reason') ?? '').trim() as FTReason;
+      const urgency = String(form.get('urgency') ?? '').trim() as Severity;
+      const notes = String(form.get('notes') ?? '').trim();
+
+      if (!postId) throw new Error('Selecione o posto da FT.');
+      if (!reason) throw new Error('Selecione o motivo da FT.');
+      if (!urgency) throw new Error('Selecione a urgência da FT.');
+
+      const ft = await openFT({
+        post_id: postId,
+        opened_by: profile.id,
+        reason,
+        urgency,
+        notes: notes || undefined,
+      });
+
+      event.currentTarget.reset();
+      setShowNewModal(false);
+      setSelectedId(ft.id);
+      setActionSuccess(`FT aberta para ${getPostName(ft.post_id)}.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível abrir a FT.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleAssignFT = async (ftId: string, employeeId: string) => {
+    clearMessages();
+    setActionLoading(`assign-${ftId}-${employeeId}`);
+
+    try {
+      const ft = await assignFT(ftId, employeeId);
+      setSelectedId(ft.id);
+      setAssigningFtId(null);
+      setActionSuccess(`${getProfileName(employeeId)} foi acionado para a FT.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível designar o funcionário.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResolveFT = async (ftId: string) => {
+    clearMessages();
+    setActionLoading(`resolve-${ftId}`);
+
+    try {
+      await resolveFT(ftId);
+      setActionSuccess('FT resolvida com sucesso.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível resolver a FT.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCancelFT = async (ftId: string) => {
+    clearMessages();
+    setActionLoading(`cancel-${ftId}`);
+
+    try {
+      await cancelFT(ftId);
+      setActionSuccess('FT cancelada com sucesso.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Não foi possível cancelar a FT.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCallEmployee = (profileId?: string) => {
+    const phone = getEmployeePhone(profileId);
+    if (!phone) {
+      setActionError('Funcionário sem telefone cadastrado.');
+      return;
+    }
+
+    window.location.href = `tel:${phone.replace(/\s+/g, '')}`;
+  };
+
+  const quickAssignableFt =
+    selected?.status === 'aberta'
+      ? selected
+      : ftRequests.find(ft => ft.status === 'aberta' && !ft.assigned_to);
 
   const columns = [
     {
@@ -89,11 +225,26 @@ export function FTPage() {
         title="Força Tarefa"
         subtitle={loading ? 'Carregando FTs...' : `${ftRequests.filter(f => f.status === 'aberta').length} FTs abertas`}
         actions={
-          <Button onClick={() => setShowAssignModal(true)}>
+          <Button onClick={() => {
+            clearMessages();
+            setShowNewModal(true);
+          }}>
             <Plus className="w-4 h-4 mr-1" /> Nova FT
           </Button>
         }
       />
+
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -198,20 +349,48 @@ export function FTPage() {
               </div>
             )}
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex flex-wrap gap-2 pt-2">
               {selected.status === 'aberta' && (
                 <>
-                  <Button onClick={() => setShowAssignModal(true)} className="flex-1">
+                  <Button onClick={() => setAssigningFtId(selected.id)} className="flex-1">
                     <Users className="w-4 h-4 mr-1" /> Designar Funcionário
                   </Button>
-                  <Button variant="secondary">
+                  <Button variant="secondary" onClick={() => handleCallEmployee(selected.assigned_to)}>
                     <Phone className="w-4 h-4 mr-1" /> Ligar
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => void handleCancelFT(selected.id)}
+                    loading={actionLoading === `cancel-${selected.id}`}
+                  >
+                    <XCircle className="w-4 h-4 mr-1" /> Cancelar
                   </Button>
                 </>
               )}
               {selected.status === 'acionando' && (
-                <Button disabled className="flex-1" title="A confirmação de aceite será concluída pelo fluxo do app mobile.">
-                  <CheckCircle className="w-4 h-4 mr-1" /> Aguardando aceite
+                <>
+                  <Button disabled className="flex-1" title="A confirmação de aceite será concluída pelo fluxo do app mobile.">
+                    <CheckCircle className="w-4 h-4 mr-1" /> Aguardando aceite
+                  </Button>
+                  <Button variant="secondary" onClick={() => handleCallEmployee(selected.assigned_to)}>
+                    <Phone className="w-4 h-4 mr-1" /> Ligar
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => void handleCancelFT(selected.id)}
+                    loading={actionLoading === `cancel-${selected.id}`}
+                  >
+                    <XCircle className="w-4 h-4 mr-1" /> Cancelar
+                  </Button>
+                </>
+              )}
+              {selected.status === 'aceita' && (
+                <Button
+                  className="flex-1"
+                  onClick={() => void handleResolveFT(selected.id)}
+                  loading={actionLoading === `resolve-${selected.id}`}
+                >
+                  <CheckCircle className="w-4 h-4 mr-1" /> Resolver FT
                 </Button>
               )}
             </div>
@@ -239,17 +418,40 @@ export function FTPage() {
                   <Avatar name={emp.name} />
                   <div>
                     <p className="text-sm font-medium text-gray-900">{emp.name}</p>
-                    <p className="text-xs text-gray-500">{emp.phone}</p>
+                    <p className="text-xs text-gray-500">{emp.phone ?? 'Sem telefone'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="p-2 hover:bg-blue-50 rounded-lg text-blue-600" title="Designar">
+                  <button
+                    type="button"
+                    className="p-2 hover:bg-blue-50 rounded-lg text-blue-600 disabled:opacity-50"
+                    title="Designar"
+                    disabled={!quickAssignableFt || actionLoading !== null}
+                    onClick={() => {
+                      if (!quickAssignableFt) {
+                        setActionError('Abra ou selecione uma FT aberta antes de designar um funcionário.');
+                        return;
+                      }
+
+                      void handleAssignFT(quickAssignableFt.id, emp.id);
+                    }}
+                  >
                     <Users className="w-4 h-4" />
                   </button>
-                  <button className="p-2 hover:bg-green-50 rounded-lg text-green-600" title="Ligar">
+                  <button
+                    type="button"
+                    className="p-2 hover:bg-green-50 rounded-lg text-green-600"
+                    title="Ligar"
+                    onClick={() => handleCallEmployee(emp.id)}
+                  >
                     <Phone className="w-4 h-4" />
                   </button>
-                  <button className="p-2 hover:bg-gray-50 rounded-lg text-gray-400" title="Localização">
+                  <button
+                    type="button"
+                    className="p-2 hover:bg-gray-50 rounded-lg text-gray-400"
+                    title="Localização"
+                    onClick={() => { window.location.hash = '/map'; }}
+                  >
                     <MapPin className="w-4 h-4" />
                   </button>
                 </div>
@@ -260,34 +462,77 @@ export function FTPage() {
       </div>
 
       {/* New FT Modal */}
-      <Modal open={showAssignModal} onClose={() => setShowAssignModal(false)} title="Nova Força Tarefa">
-        <div className="space-y-4">
+      <Modal open={showNewModal} onClose={() => setShowNewModal(false)} title="Nova Força Tarefa">
+        <form onSubmit={handleOpenFT} className="space-y-4">
           <SelectField
             id="ft-post"
+            name="post_id"
             label="Posto"
             placeholder="Selecione o posto..."
-            options={[
-              { value: 'post-001', label: 'Portaria Principal - Plaza' },
-              { value: 'post-002', label: 'Estacionamento Subsolo - Plaza' },
-              { value: 'post-003', label: 'Portaria Torre B - Plaza' },
-            ]}
+            options={activePosts.map(post => ({ value: post.id, label: post.name }))}
           />
           <SelectField
             id="ft-reason"
+            name="reason"
             label="Motivo"
             placeholder="Selecione..."
-            options={[
-              { value: 'ausencia', label: 'Ausência' },
-              { value: 'atraso', label: 'Atraso' },
-              { value: 'retencao', label: 'Retenção' },
-              { value: 'preventiva', label: 'Preventiva' },
-            ]}
+            options={FT_REASON_OPTIONS}
+          />
+          <SelectField
+            id="ft-urgency"
+            name="urgency"
+            label="Urgência"
+            placeholder="Selecione..."
+            options={FT_URGENCY_OPTIONS}
+          />
+          <Textarea
+            id="ft-notes"
+            name="notes"
+            label="Observações"
+            placeholder="Contexto da cobertura emergencial, se necessário..."
           />
           <div className="flex gap-2 pt-2">
-            <Button className="flex-1">Abrir FT</Button>
-            <Button variant="secondary" onClick={() => setShowAssignModal(false)}>Cancelar</Button>
+            <Button type="submit" className="flex-1" loading={actionLoading === 'open'}>
+              Abrir FT
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setShowNewModal(false)}>Cancelar</Button>
           </div>
-          <p className="text-xs text-gray-400 text-center">⚠️ Modo demo</p>
+        </form>
+      </Modal>
+
+      {/* Assign FT Modal */}
+      <Modal open={!!assigningFtId} onClose={() => setAssigningFtId(null)} title="Designar funcionário para FT">
+        <div className="space-y-3">
+          {assigningFt && (
+            <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+              <strong>{getPostName(assigningFt.post_id)}</strong> — {assigningFt.reason.replace('_', ' ')}
+            </div>
+          )}
+
+          {availableEmployees.length === 0 ? (
+            <p className="text-sm text-gray-500">Nenhum funcionário disponível para FT.</p>
+          ) : (
+            <div className="space-y-2">
+              {availableEmployees.map(emp => (
+                <div key={emp.id} className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={emp.name} />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{emp.name}</p>
+                      <p className="text-xs text-gray-500">{emp.phone ?? 'Sem telefone'}</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => assigningFtId && void handleAssignFT(assigningFtId, emp.id)}
+                    loading={actionLoading === `assign-${assigningFtId}-${emp.id}`}
+                  >
+                    Designar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Modal>
     </div>

@@ -8,7 +8,7 @@
 
 import type { IDataProvider } from '../data-provider';
 import {
-  DEMO_POSTS, DEMO_PROFILES, DEMO_PRESENCES, DEMO_OCCURRENCES,
+  DEMO_CLIENT, DEMO_POSTS, DEMO_PROFILES, DEMO_PRESENCES, DEMO_OCCURRENCES,
   DEMO_FT_REQUESTS, DEMO_POST_STATUS, DEMO_DASHBOARD,
   DEMO_RONDA_POINTS, DEMO_RONDA_LOGS, DEMO_HANDOVERS,
   DEMO_NOTIFICATIONS, DEMO_REPORTS,
@@ -16,25 +16,27 @@ import {
 } from '../../mockData';
 import { haversineDistance, checkGeofence } from '../../geo';
 import type {
-  Post, Profile, Presence, Occurrence, FTRequest,
+  Post, Profile, Presence, Occurrence, FTRequest, Client,
   OperationalPostStatus, Schedule,
 } from '../../types';
 import type {
-  PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
+  ClientFilters, CreateClientInput, PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
   FTFilters, RondaFilters, HandoverFilters, NotificationFilters,
   AuditFilters, ScheduleFilters,
   ConfirmPresenceInput, PresenceResult, CreateOccurrenceInput,
   TriggerSOSInput, OpenFTInput, RondaPointData, RondaLogData,
-  ConfirmRondaInput, HandoverData, CreateHandoverInput, ReportData,
+  ConfirmRondaInput, CreateRondaPointInput, HandoverData, CreateHandoverInput, ReportData,
   NotificationData, AuditEntryInput, AuditEntryData, ScheduleConflictData,
 } from '../data-provider';
 
 // --- Local state (mutável para simular persistência) ---
+let _clients = [DEMO_CLIENT];
 let _posts = [...DEMO_POSTS];
 let _profiles = [...DEMO_PROFILES];
 let _presences = [...DEMO_PRESENCES];
 let _occurrences = [...DEMO_OCCURRENCES];
 let _ftRequests = [...DEMO_FT_REQUESTS];
+let _rondaPoints = DEMO_RONDA_POINTS.map(p => ({ ...p }));
 let _rondaLogs = [...DEMO_RONDA_LOGS];
 let _handovers = [...DEMO_HANDOVERS];
 let _notifications = DEMO_NOTIFICATIONS.map(n => ({ ...n }));
@@ -52,12 +54,63 @@ function todayShiftEnd(): string {
   const d = new Date(); d.setHours(18, 0, 0, 0); return d.toISOString();
 }
 
+
+// ==================== CLIENTS ====================
+const clientsRepo = {
+  async list(filters?: ClientFilters): Promise<Client[]> {
+    let result = [..._clients];
+    if (filters?.company_id) result = result.filter(c => c.company_id === filters.company_id);
+    if (filters?.active !== undefined) result = result.filter(c => c.active === filters.active);
+    else result = result.filter(c => c.active);
+    if (filters?.search) {
+      const term = filters.search.toLowerCase();
+      result = result.filter(c =>
+        c.name.toLowerCase().includes(term) ||
+        (c.cnpj ?? '').toLowerCase().includes(term) ||
+        (c.contact_name ?? '').toLowerCase().includes(term) ||
+        (c.contact_email ?? '').toLowerCase().includes(term)
+      );
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async getById(id: string): Promise<Client | null> {
+    return _clients.find(c => c.id === id) ?? null;
+  },
+  async create(data: CreateClientInput): Promise<Client> {
+    const now = new Date().toISOString();
+    const client: Client = {
+      id: `client-${Date.now()}`,
+      company_id: data.company_id,
+      name: data.name,
+      cnpj: data.cnpj,
+      contact_name: data.contact_name,
+      contact_phone: data.contact_phone,
+      contact_email: data.contact_email,
+      address: data.address,
+      notes: data.notes,
+      active: data.active ?? true,
+      created_at: now,
+      updated_at: now,
+    };
+    _clients.push(client);
+    return client;
+  },
+  async update(id: string, data: Partial<CreateClientInput>): Promise<Client> {
+    const idx = _clients.findIndex(c => c.id === id);
+    if (idx === -1) throw new Error('Client not found');
+    _clients[idx] = { ..._clients[idx], ...data, updated_at: new Date().toISOString() };
+    return _clients[idx];
+  },
+};
+
 // ==================== POSTS ====================
 const postsRepo = {
   async list(filters?: PostFilters): Promise<Post[]> {
-    let result = _posts.filter(p => p.active);
+    let result = [..._posts];
     if (filters?.company_id) result = result.filter(p => p.company_id === filters.company_id);
     if (filters?.client_id) result = result.filter(p => p.client_id === filters.client_id);
+    if (filters?.active === undefined) result = result.filter(p => p.active);
+    else if (filters.active !== 'all') result = result.filter(p => p.active === filters.active);
     return result;
   },
   async getById(id: string): Promise<Post | null> {
@@ -77,6 +130,11 @@ const postsRepo = {
     if (idx === -1) throw new Error('Post not found');
     _posts[idx] = { ..._posts[idx], ...data, updated_at: new Date().toISOString() };
     return _posts[idx];
+  },
+  async delete(id: string): Promise<void> {
+    const idx = _posts.findIndex(p => p.id === id);
+    if (idx === -1) throw new Error('Post not found');
+    _posts.splice(idx, 1);
   },
   async getOperationalStatuses(): Promise<OperationalPostStatus[]> {
     return DEMO_POST_STATUS;
@@ -322,7 +380,27 @@ const ftRepo = {
 // ==================== RONDA ====================
 const rondaRepo = {
   async getPoints(postId: string): Promise<RondaPointData[]> {
-    return DEMO_RONDA_POINTS.filter(p => p.post_id === postId);
+    return _rondaPoints
+      .filter(p => p.post_id === postId && p.active)
+      .sort((a, b) => a.sequence_order - b.sequence_order);
+  },
+  async createPoint(input: CreateRondaPointInput): Promise<RondaPointData> {
+    const point: RondaPointData = {
+      id: `rp-${Date.now()}`,
+      post_id: input.post_id,
+      name: input.name,
+      lat: input.lat,
+      lng: input.lng,
+      radius_meters: input.radius_meters ?? 20,
+      sequence_order: input.sequence_order ?? _rondaPoints.filter(p => p.post_id === input.post_id).length + 1,
+      require_photo: input.require_photo ?? false,
+      qr_code_token: input.qr_code_token || `qr-${Date.now()}`,
+      nfc_uid: input.nfc_uid || undefined,
+      active: true,
+      created_at: new Date().toISOString(),
+    };
+    _rondaPoints.push(point);
+    return point;
   },
   async getLogs(filters?: RondaFilters): Promise<RondaLogData[]> {
     let result = [..._rondaLogs];
@@ -463,6 +541,16 @@ const schedulesRepo = {
     _schedules.push(sched);
     return sched;
   },
+  async update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule> {
+    const index = _schedules.findIndex(s => s.id === id);
+    if (index === -1) throw new Error('Escala não encontrada.');
+
+    _schedules[index] = { ..._schedules[index], ...data };
+    return _schedules[index];
+  },
+  async delete(id: string): Promise<void> {
+    _schedules = _schedules.filter(s => s.id !== id);
+  },
   async detectConflicts(_employeeId: string): Promise<ScheduleConflictData[]> {
     return []; // Demo: sem conflitos
   },
@@ -471,6 +559,7 @@ const schedulesRepo = {
 // ==================== FACTORY ====================
 export function createDemoAdapter(): IDataProvider {
   return {
+    clients: clientsRepo,
     posts: postsRepo,
     employees: employeesRepo,
     presence: presenceRepo,

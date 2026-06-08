@@ -3,7 +3,8 @@
 // ============================================================
 
 import { PageHeader, Card, Badge, Button } from '@/components/ui';
-import { useOccurrences, useRealtimeDashboard } from '@/hooks';
+import { useClients, useOccurrences, usePosts, useRealtimeDashboard } from '@/hooks';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import {
   Building2, Eye, Clock, Users,
@@ -12,21 +13,30 @@ import {
 } from 'lucide-react';
 
 export function ClientPortalPage() {
-  const { postStatuses, summary } = useRealtimeDashboard();
+  const { clients, loading: clientsLoading } = useClients({ active: true });
+  const { posts } = usePosts();
+  const { postStatuses } = useRealtimeDashboard();
   const { occurrences } = useOccurrences();
+  const { settings } = useCompanySettings();
 
-  const activePosts = summary?.total_posts ?? postStatuses.length;
-  const coveredPosts = summary?.cobertos ?? postStatuses.filter(p => p.status === 'coberto').length;
+  const client = clients[0] ?? null;
+  const clientPosts = client ? posts.filter(post => post.client_id === client.id) : [];
+  const clientPostIds = new Set(clientPosts.map(post => post.id));
+  const clientPostStatuses = postStatuses.filter(post => clientPostIds.has(post.post_id));
+  const clientOccurrences = occurrences.filter(occurrence => clientPostIds.has(occurrence.post_id));
+
+  const activePosts = clientPosts.length;
+  const coveredPosts = clientPostStatuses.filter(post => post.status === 'coberto').length;
   const coverage = activePosts > 0 ? (coveredPosts / activePosts) * 100 : 0;
 
   const portal = {
-    client_name: 'Edifícios Corporativos Plaza',
+    client_name: client?.name ?? 'Cliente não selecionado',
     total_posts: activePosts,
     active_posts: activePosts,
     current_shift_coverage: coverage,
-    occurrences_today: occurrences.length,
-    pending_items: postStatuses.filter(p => p.status !== 'coberto').length,
-    posts: postStatuses.map(post => ({
+    occurrences_today: clientOccurrences.length,
+    pending_items: clientPostStatuses.filter(p => p.status !== 'coberto').length,
+    posts: clientPostStatuses.map(post => ({
       name: post.post_name,
       status:
         post.status === 'coberto' ? 'Coberto' :
@@ -48,11 +58,40 @@ export function ClientPortalPage() {
     ? 'bg-green-500' : portal.current_shift_coverage >= 70
     ? 'bg-yellow-500' : 'bg-red-500';
 
+  const contactPhone = settings?.phone || client?.contact_phone || 'Não informado';
+  const contactEmail = settings?.email || client?.contact_email || 'Não informado';
+
+  if (!client && !clientsLoading) {
+    return (
+      <div>
+        <PageHeader
+          title="Portal do Cliente"
+          subtitle="Nenhum cliente ativo encontrado para montar o portal."
+          actions={
+            <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-100 px-3 py-2 rounded-lg">
+              <Lock className="w-3.5 h-3.5" />
+              Acesso restrito ao cliente
+            </div>
+          }
+        />
+        <Card>
+          <div className="text-center py-8">
+            <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <h3 className="font-semibold text-gray-900">Cadastre um cliente primeiro</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              O portal usa clientes reais do tenant. Cadastre um cliente em Clientes e vincule postos a ele.
+            </p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
         title="Portal do Cliente"
-        subtitle={`Visão para ${portal.client_name}`}
+        subtitle={clientsLoading ? 'Carregando cliente...' : `Visão para ${portal.client_name}`}
         actions={
           <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-100 px-3 py-2 rounded-lg">
             <Lock className="w-3.5 h-3.5" />
@@ -74,7 +113,7 @@ export function ClientPortalPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => { if (contactPhone !== 'Não informado') window.location.href = `tel:${contactPhone}`; }}>
               <Phone className="w-4 h-4 mr-1" /> Contato
             </Button>
             <Button variant="secondary" size="sm">
@@ -169,10 +208,10 @@ export function ClientPortalPage() {
       <Card className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-900">Ocorrências Recentes</h3>
-          <Badge variant="info">{occurrences.length}</Badge>
+          <Badge variant="info">{clientOccurrences.length}</Badge>
         </div>
         <div className="space-y-3">
-          {occurrences.slice(0, 3).map(occ => (
+          {clientOccurrences.slice(0, 3).map(occ => (
             <div key={occ.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className={cn(
@@ -191,6 +230,9 @@ export function ClientPortalPage() {
               </Badge>
             </div>
           ))}
+          {clientOccurrences.length === 0 && (
+            <p className="text-sm text-gray-500 text-center py-4">Nenhuma ocorrência recente para este cliente.</p>
+          )}
         </div>
         <p className="text-xs text-gray-400 mt-3 text-center">
           🔒 Detalhes sensíveis omitidos para proteção do cliente
@@ -218,14 +260,14 @@ export function ClientPortalPage() {
           </div>
           <div className="space-y-2 text-sm">
             <p className="flex items-center gap-2 text-gray-600">
-              <Phone className="w-4 h-4 text-gray-400" /> (11) 98765-4321 — Plantão 24h
+              <Phone className="w-4 h-4 text-gray-400" /> {contactPhone} — Plantão 24h
             </p>
             <p className="flex items-center gap-2 text-gray-600">
-              <Mail className="w-4 h-4 text-gray-400" /> contato@segurancatotal.com.br
+              <Mail className="w-4 h-4 text-gray-400" /> {contactEmail}
             </p>
           </div>
           <p className="text-xs text-gray-400 mt-3">
-            Em caso de emergência, ligue diretamente para o plantão.
+            Em caso de emergência, use o contato oficial configurado para esta empresa.
           </p>
         </Card>
       </div>

@@ -224,12 +224,14 @@ export default function AlertsCenterPage() {
       }, 500);
     };
 
-    const channel = supabase
-      .channel('alerts-center-realtime')
+    const channel = supabase.channel(`alerts-center-realtime-${Date.now()}-${Math.random()}`);
+
+    channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'occurrences' }, scheduleRealtimeReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'presences' }, scheduleRealtimeReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_logs' }, scheduleRealtimeReload)
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notification_logs' }, scheduleRealtimeReload);
+
+    channel.subscribe();
 
     return () => {
       window.clearInterval(interval);

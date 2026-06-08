@@ -719,36 +719,48 @@ export function usePermissions() {
 }
 
 // ==================== USE DASHBOARD ====================
+const DASHBOARD_AUTO_REFRESH_MS = 30_000;
+
 export function useRealtimeDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [postStatuses, setStatuses] = useState<OperationalPostStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const dp = getDataProvider();
-        const [sum, statuses] = await Promise.all([
-          dp.reports.getDashboardSummary(),
-          dp.posts.getOperationalStatuses(),
-        ]);
-        setSummary(sum);
-        setStatuses(statuses);
-      } finally { setLoading(false); }
-    };
-    load();
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
+
+    try {
+      const dp = getDataProvider();
+      const [sum, statuses] = await Promise.all([
+        dp.reports.getDashboardSummary(),
+        dp.posts.getOperationalStatuses(),
+      ]);
+      setSummary(sum);
+      setStatuses(statuses);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
 
-  const refresh = useCallback(async () => {
-    const dp = getDataProvider();
-    const [sum, statuses] = await Promise.all([
-      dp.reports.getDashboardSummary(),
-      dp.posts.getOperationalStatuses(),
-    ]);
-    setSummary(sum);
-    setStatuses(statuses);
-  }, []);
+  useEffect(() => {
+    void refresh();
+
+    const interval = window.setInterval(() => {
+      void refresh({ silent: true });
+    }, DASHBOARD_AUTO_REFRESH_MS);
+
+    const handleFocus = () => {
+      void refresh({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [refresh]);
 
   return { summary, postStatuses, loading, refresh };
 }

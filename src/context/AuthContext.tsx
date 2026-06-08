@@ -271,39 +271,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (DEMO_MODE) return;
 
     let mounted = true;
+    const supabase = getSupabaseClient();
+
+    const setUnauthenticated = () => {
+      if (!mounted) return;
+      setState({ isAuthenticated: false, profile: null, platformAdmin: null, companyAccess: null, isLoading: false, mode: 'supabase' });
+    };
+
+    const loadAuthenticatedUser = async (userId: string) => {
+      try {
+        const resolved = await resolveAuthenticatedUser(userId);
+
+        if (mounted) {
+          setState({ isAuthenticated: true, ...resolved, isLoading: false, mode: 'supabase' });
+        }
+      } catch (error) {
+        console.warn('[auth] falha ao resolver usuário autenticado:', error);
+        setUnauthenticated();
+      }
+    };
 
     const loadSession = async () => {
       try {
-        const supabase = getSupabaseClient();
         const { data, error } = await supabase.auth.getSession();
 
         if (error) throw error;
 
         const user = data.session?.user;
-
         if (!user) {
-          if (mounted) {
-            setState({ isAuthenticated: false, profile: null, platformAdmin: null, companyAccess: null, isLoading: false, mode: 'supabase' });
-          }
+          setUnauthenticated();
           return;
         }
 
-        const resolved = await resolveAuthenticatedUser(user.id);
-
-        if (mounted) {
-          setState({ isAuthenticated: true, ...resolved, isLoading: false, mode: 'supabase' });
-        }
+        await loadAuthenticatedUser(user.id);
       } catch {
-        if (mounted) {
-          setState({ isAuthenticated: false, profile: null, platformAdmin: null, companyAccess: null, isLoading: false, mode: 'supabase' });
-        }
+        setUnauthenticated();
       }
     };
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setUnauthenticated();
+        return;
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        void loadAuthenticatedUser(session.user.id);
+      }
+    });
 
     void loadSession();
 
     return () => {
       mounted = false;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 

@@ -115,9 +115,31 @@ export function usePosts(filters?: PostFilters) {
     return post;
   }, [refresh]);
 
+  const deactivatePost = useCallback((id: string): Promise<Post> => updatePost(id, { active: false }), [updatePost]);
+
+  const reactivatePost = useCallback((id: string): Promise<Post> => updatePost(id, { active: true }), [updatePost]);
+
+  const deletePost = useCallback(async (id: string): Promise<void> => {
+    const dp = getDataProvider();
+    await dp.posts.delete(id);
+    await refresh();
+  }, [refresh]);
+
   const getStatus = (postId: string) => statuses.find(s => s.post_id === postId);
 
-  return { posts, statuses, getStatus, loading, permissions, refresh, createPost, updatePost };
+  return {
+    posts,
+    statuses,
+    getStatus,
+    loading,
+    permissions,
+    refresh,
+    createPost,
+    updatePost,
+    deactivatePost,
+    reactivatePost,
+    deletePost,
+  };
 }
 
 // ==================== USE EMPLOYEES ====================

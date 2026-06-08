@@ -105,9 +105,11 @@ const clientsRepo = {
 // ==================== POSTS ====================
 const postsRepo = {
   async list(filters?: PostFilters): Promise<Post[]> {
-    let result = _posts.filter(p => p.active);
+    let result = [..._posts];
     if (filters?.company_id) result = result.filter(p => p.company_id === filters.company_id);
     if (filters?.client_id) result = result.filter(p => p.client_id === filters.client_id);
+    if (filters?.active === undefined) result = result.filter(p => p.active);
+    else if (filters.active !== 'all') result = result.filter(p => p.active === filters.active);
     return result;
   },
   async getById(id: string): Promise<Post | null> {
@@ -127,6 +129,11 @@ const postsRepo = {
     if (idx === -1) throw new Error('Post not found');
     _posts[idx] = { ..._posts[idx], ...data, updated_at: new Date().toISOString() };
     return _posts[idx];
+  },
+  async delete(id: string): Promise<void> {
+    const idx = _posts.findIndex(p => p.id === id);
+    if (idx === -1) throw new Error('Post not found');
+    _posts.splice(idx, 1);
   },
   async getOperationalStatuses(): Promise<OperationalPostStatus[]> {
     return DEMO_POST_STATUS;

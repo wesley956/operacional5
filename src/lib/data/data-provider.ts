@@ -33,6 +33,7 @@ export interface IPostsRepository {
   getById(id: string): Promise<Post | null>;
   create(data: Omit<Post, 'id' | 'created_at' | 'updated_at' | 'qr_code_token'>): Promise<Post>;
   update(id: string, data: Partial<Post>): Promise<Post>;
+  delete(id: string): Promise<void>;
   getOperationalStatuses(): Promise<OperationalPostStatus[]>;
   getOperationalStatus(postId: string): Promise<OperationalPostStatus | null>;
 }
@@ -128,7 +129,7 @@ export interface ClientFilters {
 export interface PostFilters {
   company_id?: string;
   client_id?: string;
-  active?: boolean;
+  active?: boolean | 'all';
 }
 
 export interface EmployeeFilters {

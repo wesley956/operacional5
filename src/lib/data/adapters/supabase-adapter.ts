@@ -284,10 +284,10 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         if (filters?.company_id) query = query.eq('company_id', filters.company_id);
         if (filters?.client_id) query = query.eq('client_id', filters.client_id);
 
-        if (filters?.active !== undefined) {
-          query = query.eq('active', filters.active);
-        } else {
+        if (filters?.active === undefined) {
           query = query.eq('active', true);
+        } else if (filters.active !== 'all') {
+          query = query.eq('active', filters.active);
         }
 
         const { data, error } = await query;
@@ -327,6 +327,15 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
 
         assertNoError(error, 'Erro ao atualizar posto');
         return asPost(row as DbRow);
+      },
+
+      async delete(id: string): Promise<void> {
+        const { error } = await supabase
+          .from('posts')
+          .delete()
+          .eq('id', id);
+
+        assertNoError(error, 'Erro ao excluir posto');
       },
 
       async getOperationalStatuses(): Promise<OperationalPostStatus[]> {

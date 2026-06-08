@@ -2,6 +2,7 @@
 // OPERACIONAL5 — App Principal (Produto Final)
 // ============================================================
 
+import { lazy, Suspense, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/components/Layout';
@@ -9,30 +10,33 @@ import { SuperAdminLayout } from '@/components/SuperAdminLayout';
 import { TrialStatusBanner } from '@/components/TrialStatusBanner';
 import { getPermissions, type PermissionSet } from '@/lib/utils';
 import { LoginPage } from '@/pages/LoginPage';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { MapPage } from '@/pages/MapPage';
-import { PostsPage } from '@/pages/PostsPage';
-import { ClientsPage } from '@/pages/ClientsPage';
-import { EmployeesPage } from '@/pages/EmployeesPage';
-import { PresencePage } from '@/pages/PresencePage';
-import { OccurrencesPage } from '@/pages/OccurrencesPage';
-import { FTPage } from '@/pages/FTPage';
-import { RondasPage } from '@/pages/RondasPage';
-import { HandoverPage } from '@/pages/HandoverPage';
-import { SchedulesPage } from '@/pages/SchedulesPage';
-import { ReportsPage } from '@/pages/ReportsPage';
-import { NotificationsPage } from '@/pages/NotificationsPage';
-import { ClientPortalPage } from '@/pages/ClientPortalPage';
-import { SettingsPage } from '@/pages/SettingsPage';
-import { AdminPage } from '@/pages/AdminPage';
 import { ForbiddenPage } from '@/pages/ForbiddenPage';
 import { SubscriptionBlockedPage } from '@/pages/SubscriptionBlockedPage';
-import { SuperAdminDashboardPage } from '@/pages/super-admin/SuperAdminDashboardPage';
-import { SuperAdminCompaniesPage } from '@/pages/super-admin/SuperAdminCompaniesPage';
-import { SuperAdminCompanyDetailPage } from '@/pages/super-admin/SuperAdminCompanyDetailPage';
-import { SuperAdminNewCompanyPage } from '@/pages/super-admin/SuperAdminNewCompanyPage';
-import { SuperAdminTrialsPage } from '@/pages/super-admin/SuperAdminTrialsPage';
-import AlertsCenterPage from './pages/AlertsCenterPage';
+
+
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const MapPage = lazy(() => import('@/pages/MapPage').then(m => ({ default: m.MapPage })));
+const PostsPage = lazy(() => import('@/pages/PostsPage').then(m => ({ default: m.PostsPage })));
+const ClientsPage = lazy(() => import('@/pages/ClientsPage').then(m => ({ default: m.ClientsPage })));
+const EmployeesPage = lazy(() => import('@/pages/EmployeesPage').then(m => ({ default: m.EmployeesPage })));
+const PresencePage = lazy(() => import('@/pages/PresencePage').then(m => ({ default: m.PresencePage })));
+const OccurrencesPage = lazy(() => import('@/pages/OccurrencesPage').then(m => ({ default: m.OccurrencesPage })));
+const FTPage = lazy(() => import('@/pages/FTPage').then(m => ({ default: m.FTPage })));
+const RondasPage = lazy(() => import('@/pages/RondasPage').then(m => ({ default: m.RondasPage })));
+const HandoverPage = lazy(() => import('@/pages/HandoverPage').then(m => ({ default: m.HandoverPage })));
+const SchedulesPage = lazy(() => import('@/pages/SchedulesPage').then(m => ({ default: m.SchedulesPage })));
+const ReportsPage = lazy(() => import('@/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const NotificationsPage = lazy(() => import('@/pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
+const ClientPortalPage = lazy(() => import('@/pages/ClientPortalPage').then(m => ({ default: m.ClientPortalPage })));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const AdminPage = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
+const AlertsCenterPage = lazy(() => import('@/pages/AlertsCenterPage'));
+
+const SuperAdminDashboardPage = lazy(() => import('@/pages/super-admin/SuperAdminDashboardPage').then(m => ({ default: m.SuperAdminDashboardPage })));
+const SuperAdminCompaniesPage = lazy(() => import('@/pages/super-admin/SuperAdminCompaniesPage').then(m => ({ default: m.SuperAdminCompaniesPage })));
+const SuperAdminCompanyDetailPage = lazy(() => import('@/pages/super-admin/SuperAdminCompanyDetailPage').then(m => ({ default: m.SuperAdminCompanyDetailPage })));
+const SuperAdminNewCompanyPage = lazy(() => import('@/pages/super-admin/SuperAdminNewCompanyPage').then(m => ({ default: m.SuperAdminNewCompanyPage })));
+const SuperAdminTrialsPage = lazy(() => import('@/pages/super-admin/SuperAdminTrialsPage').then(m => ({ default: m.SuperAdminTrialsPage })));
 
 function LoadingScreen() {
   return (
@@ -46,7 +50,7 @@ function LoadingScreen() {
 }
 
 function TenantGuard({ children, permission }: {
-  children: React.ReactNode;
+  children: ReactNode;
   permission?: (permissions: PermissionSet) => boolean;
 }) {
   const { profile, isPlatformAdmin, accessBlocked } = useAuth();
@@ -72,27 +76,29 @@ function TenantGuard({ children, permission }: {
 
 function TenantRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<TenantGuard><DashboardPage /></TenantGuard>} />
-      <Route path="/dashboard" element={<TenantGuard><DashboardPage /></TenantGuard>} />
-      <Route path="/map" element={<TenantGuard><MapPage /></TenantGuard>} />
-      <Route path="/posts" element={<TenantGuard permission={p => p.canViewAllPosts || p.canViewAssignedPosts}><PostsPage /></TenantGuard>} />
-      <Route path="/clients" element={<TenantGuard permission={p => p.canViewAllPosts}><ClientsPage /></TenantGuard>} />
-      <Route path="/employees" element={<TenantGuard permission={p => p.canViewAllEmployees}><EmployeesPage /></TenantGuard>} />
-      <Route path="/presence" element={<TenantGuard permission={p => p.canViewAllPresences || p.canConfirmPresence}><PresencePage /></TenantGuard>} />
-      <Route path="/occurrences" element={<TenantGuard permission={p => p.canViewAllOccurrences || p.canCreateOccurrence}><OccurrencesPage /></TenantGuard>} />
-      <Route path="/ft" element={<TenantGuard permission={p => p.canViewFT || p.canManageFT}><FTPage /></TenantGuard>} />
-      <Route path="/rondas" element={<TenantGuard><RondasPage /></TenantGuard>} />
-      <Route path="/handovers" element={<TenantGuard><HandoverPage /></TenantGuard>} />
-      <Route path="/schedules" element={<TenantGuard permission={p => p.canManageSchedules}><SchedulesPage /></TenantGuard>} />
-      <Route path="/reports" element={<TenantGuard permission={p => p.canViewAudit}><ReportsPage /></TenantGuard>} />
-      <Route path="/notifications" element={<TenantGuard><NotificationsPage /></TenantGuard>} />
-      <Route path="/client-portal" element={<TenantGuard><ClientPortalPage /></TenantGuard>} />
-      <Route path="/settings" element={<TenantGuard permission={p => p.canManageSettings}><SettingsPage /></TenantGuard>} />
-      <Route path="/admin" element={<TenantGuard permission={p => p.canAccessAdmin}><AdminPage /></TenantGuard>} />
-      <Route path="/alerts" element={<TenantGuard><AlertsCenterPage /></TenantGuard>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route path="/" element={<TenantGuard><DashboardPage /></TenantGuard>} />
+        <Route path="/dashboard" element={<TenantGuard><DashboardPage /></TenantGuard>} />
+        <Route path="/map" element={<TenantGuard><MapPage /></TenantGuard>} />
+        <Route path="/posts" element={<TenantGuard permission={p => p.canViewAllPosts || p.canViewAssignedPosts}><PostsPage /></TenantGuard>} />
+        <Route path="/clients" element={<TenantGuard permission={p => p.canViewAllPosts}><ClientsPage /></TenantGuard>} />
+        <Route path="/employees" element={<TenantGuard permission={p => p.canViewAllEmployees}><EmployeesPage /></TenantGuard>} />
+        <Route path="/presence" element={<TenantGuard permission={p => p.canViewAllPresences || p.canConfirmPresence}><PresencePage /></TenantGuard>} />
+        <Route path="/occurrences" element={<TenantGuard permission={p => p.canViewAllOccurrences || p.canCreateOccurrence}><OccurrencesPage /></TenantGuard>} />
+        <Route path="/ft" element={<TenantGuard permission={p => p.canViewFT || p.canManageFT}><FTPage /></TenantGuard>} />
+        <Route path="/rondas" element={<TenantGuard><RondasPage /></TenantGuard>} />
+        <Route path="/handovers" element={<TenantGuard><HandoverPage /></TenantGuard>} />
+        <Route path="/schedules" element={<TenantGuard permission={p => p.canManageSchedules}><SchedulesPage /></TenantGuard>} />
+        <Route path="/reports" element={<TenantGuard permission={p => p.canViewAudit}><ReportsPage /></TenantGuard>} />
+        <Route path="/notifications" element={<TenantGuard><NotificationsPage /></TenantGuard>} />
+        <Route path="/client-portal" element={<TenantGuard><ClientPortalPage /></TenantGuard>} />
+        <Route path="/settings" element={<TenantGuard permission={p => p.canManageSettings}><SettingsPage /></TenantGuard>} />
+        <Route path="/admin" element={<TenantGuard permission={p => p.canAccessAdmin}><AdminPage /></TenantGuard>} />
+        <Route path="/alerts" element={<TenantGuard><AlertsCenterPage /></TenantGuard>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -116,14 +122,16 @@ function SuperAdminRoutes() {
   }
 
   return (
-    <Routes>
-      <Route path="/super-admin" element={<SuperAdminDashboardPage />} />
-      <Route path="/super-admin/companies" element={<SuperAdminCompaniesPage />} />
-      <Route path="/super-admin/trials" element={<SuperAdminTrialsPage />} />
-      <Route path="/super-admin/companies/new" element={<SuperAdminNewCompanyPage />} />
-      <Route path="/super-admin/companies/:id" element={<SuperAdminCompanyDetailPage />} />
-      <Route path="*" element={<Navigate to="/super-admin" replace />} />
-    </Routes>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        <Route path="/super-admin" element={<SuperAdminDashboardPage />} />
+        <Route path="/super-admin/companies" element={<SuperAdminCompaniesPage />} />
+        <Route path="/super-admin/trials" element={<SuperAdminTrialsPage />} />
+        <Route path="/super-admin/companies/new" element={<SuperAdminNewCompanyPage />} />
+        <Route path="/super-admin/companies/:id" element={<SuperAdminCompanyDetailPage />} />
+        <Route path="*" element={<Navigate to="/super-admin" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

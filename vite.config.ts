@@ -23,6 +23,28 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
+      rollupOptions: useSingleFile
+        ? undefined
+        : {
+            output: {
+              manualChunks(id) {
+                if (!id.includes('node_modules')) return undefined;
+
+                if (id.includes('@supabase')) return 'vendor-supabase';
+                if (
+                  id.includes('react') ||
+                  id.includes('react-dom') ||
+                  id.includes('react-router-dom')
+                ) {
+                  return 'vendor-react';
+                }
+                if (id.includes('lucide-react')) return 'vendor-icons';
+                if (id.includes('date-fns')) return 'vendor-date';
+
+                return 'vendor';
+              },
+            },
+          },
     },
   };
 });

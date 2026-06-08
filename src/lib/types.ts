@@ -61,8 +61,10 @@ export interface Client {
   contact_phone?: string;
   contact_email?: string;
   address?: string;
+  notes?: string;
   active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Post {

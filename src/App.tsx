@@ -12,6 +12,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { MapPage } from '@/pages/MapPage';
 import { PostsPage } from '@/pages/PostsPage';
+import { ClientsPage } from '@/pages/ClientsPage';
 import { EmployeesPage } from '@/pages/EmployeesPage';
 import { PresencePage } from '@/pages/PresencePage';
 import { OccurrencesPage } from '@/pages/OccurrencesPage';
@@ -76,6 +77,7 @@ function TenantRoutes() {
       <Route path="/dashboard" element={<TenantGuard><DashboardPage /></TenantGuard>} />
       <Route path="/map" element={<TenantGuard><MapPage /></TenantGuard>} />
       <Route path="/posts" element={<TenantGuard permission={p => p.canViewAllPosts || p.canViewAssignedPosts}><PostsPage /></TenantGuard>} />
+      <Route path="/clients" element={<TenantGuard permission={p => p.canViewAllPosts}><ClientsPage /></TenantGuard>} />
       <Route path="/employees" element={<TenantGuard permission={p => p.canViewAllEmployees}><EmployeesPage /></TenantGuard>} />
       <Route path="/presence" element={<TenantGuard permission={p => p.canViewAllPresences || p.canConfirmPresence}><PresencePage /></TenantGuard>} />
       <Route path="/occurrences" element={<TenantGuard permission={p => p.canViewAllOccurrences || p.canCreateOccurrence}><OccurrencesPage /></TenantGuard>} />

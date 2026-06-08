@@ -8,16 +8,61 @@ import { getSupabaseClient } from '@/lib/supabase/client';
 import { useProfile } from '@/context/AuthContext';
 import { getPermissions } from '@/lib/utils';
 import type {
-  Post, Profile, Role, Presence, Occurrence, FTRequest,
+  Post, Profile, Role, Presence, Occurrence, FTRequest, Client,
   OperationalPostStatus, DashboardSummary, Schedule,
 } from '@/lib/types';
 import type {
-  PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
+  ClientFilters, CreateClientInput, PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
   FTFilters, HandoverFilters, NotificationFilters, ScheduleFilters,
   ConfirmPresenceInput, CreateOccurrenceInput, TriggerSOSInput, OpenFTInput,
   PresenceResult, RondaPointData, RondaLogData, HandoverData,
   ReportData, NotificationData, CreateHandoverInput,
 } from '@/lib/data/data-provider';
+
+
+// ==================== USE CLIENTS ====================
+export function useClients(filters?: ClientFilters) {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const profile = useProfile();
+  const filterKey = JSON.stringify(filters);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const dp = getDataProvider();
+      const data = await dp.clients.list(filters);
+      setClients(data);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterKey]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const createClient = useCallback(async (
+    data: Omit<CreateClientInput, 'company_id'> & { company_id?: string }
+  ): Promise<Client> => {
+    const dp = getDataProvider();
+    const client = await dp.clients.create({
+      ...data,
+      company_id: data.company_id ?? profile.company_id,
+    });
+    await refresh();
+    return client;
+  }, [profile.company_id, refresh]);
+
+  const updateClient = useCallback(async (id: string, data: Partial<CreateClientInput>): Promise<Client> => {
+    const dp = getDataProvider();
+    const client = await dp.clients.update(id, data);
+    await refresh();
+    return client;
+  }, [refresh]);
+
+  return { clients, loading, refresh, createClient, updateClient };
+}
 
 // ==================== USE POSTS ====================
 export function usePosts(filters?: PostFilters) {

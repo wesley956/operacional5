@@ -9,7 +9,7 @@
 // ============================================================
 
 import type {
-  Profile, Post, Schedule, Presence,
+  Profile, Post, Schedule, Presence, Client,
   Occurrence, FTRequest, OperationalPostStatus,
   DashboardSummary, Role, PresenceMethod, Severity,
   OccurrenceType, FTReason, HandoverStatus,
@@ -19,6 +19,14 @@ import { createSupabaseAdapter } from './adapters/supabase-adapter';
 import { DEMO_MODE, SUPABASE_ANON_KEY, SUPABASE_URL, assertSafeRuntimeConfig } from '../env';
 
 // --- Repository Interfaces ---
+
+
+export interface IClientsRepository {
+  list(filters?: ClientFilters): Promise<Client[]>;
+  getById(id: string): Promise<Client | null>;
+  create(data: CreateClientInput): Promise<Client>;
+  update(id: string, data: Partial<CreateClientInput>): Promise<Client>;
+}
 
 export interface IPostsRepository {
   list(filters?: PostFilters): Promise<Post[]>;
@@ -109,6 +117,12 @@ export interface ISchedulesRepository {
 
 // --- Input/Output Types ---
 
+export interface ClientFilters {
+  company_id?: string;
+  active?: boolean;
+  search?: string;
+}
+
 export interface PostFilters {
   company_id?: string;
   client_id?: string;
@@ -172,6 +186,19 @@ export interface ScheduleFilters {
   post_id?: string;
   employee_id?: string;
   is_active?: boolean;
+}
+
+
+export interface CreateClientInput {
+  company_id: string;
+  name: string;
+  cnpj?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  address?: string;
+  notes?: string;
+  active?: boolean;
 }
 
 export interface ConfirmPresenceInput {
@@ -349,6 +376,7 @@ export interface ScheduleConflictData {
 // --- Data Provider Interface ---
 
 export interface IDataProvider {
+  clients: IClientsRepository;
   posts: IPostsRepository;
   employees: IEmployeesRepository;
   presence: IPresenceRepository;

@@ -8,7 +8,7 @@
 
 import type { IDataProvider } from '../data-provider';
 import {
-  DEMO_POSTS, DEMO_PROFILES, DEMO_PRESENCES, DEMO_OCCURRENCES,
+  DEMO_CLIENT, DEMO_POSTS, DEMO_PROFILES, DEMO_PRESENCES, DEMO_OCCURRENCES,
   DEMO_FT_REQUESTS, DEMO_POST_STATUS, DEMO_DASHBOARD,
   DEMO_RONDA_POINTS, DEMO_RONDA_LOGS, DEMO_HANDOVERS,
   DEMO_NOTIFICATIONS, DEMO_REPORTS,
@@ -16,11 +16,11 @@ import {
 } from '../../mockData';
 import { haversineDistance, checkGeofence } from '../../geo';
 import type {
-  Post, Profile, Presence, Occurrence, FTRequest,
+  Post, Profile, Presence, Occurrence, FTRequest, Client,
   OperationalPostStatus, Schedule,
 } from '../../types';
 import type {
-  PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
+  ClientFilters, CreateClientInput, PostFilters, EmployeeFilters, PresenceFilters, OccurrenceFilters,
   FTFilters, RondaFilters, HandoverFilters, NotificationFilters,
   AuditFilters, ScheduleFilters,
   ConfirmPresenceInput, PresenceResult, CreateOccurrenceInput,
@@ -30,6 +30,7 @@ import type {
 } from '../data-provider';
 
 // --- Local state (mutável para simular persistência) ---
+let _clients = [DEMO_CLIENT];
 let _posts = [...DEMO_POSTS];
 let _profiles = [...DEMO_PROFILES];
 let _presences = [...DEMO_PRESENCES];
@@ -51,6 +52,55 @@ function todayShiftStart(): string {
 function todayShiftEnd(): string {
   const d = new Date(); d.setHours(18, 0, 0, 0); return d.toISOString();
 }
+
+
+// ==================== CLIENTS ====================
+const clientsRepo = {
+  async list(filters?: ClientFilters): Promise<Client[]> {
+    let result = [..._clients];
+    if (filters?.company_id) result = result.filter(c => c.company_id === filters.company_id);
+    if (filters?.active !== undefined) result = result.filter(c => c.active === filters.active);
+    else result = result.filter(c => c.active);
+    if (filters?.search) {
+      const term = filters.search.toLowerCase();
+      result = result.filter(c =>
+        c.name.toLowerCase().includes(term) ||
+        (c.cnpj ?? '').toLowerCase().includes(term) ||
+        (c.contact_name ?? '').toLowerCase().includes(term) ||
+        (c.contact_email ?? '').toLowerCase().includes(term)
+      );
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async getById(id: string): Promise<Client | null> {
+    return _clients.find(c => c.id === id) ?? null;
+  },
+  async create(data: CreateClientInput): Promise<Client> {
+    const now = new Date().toISOString();
+    const client: Client = {
+      id: `client-${Date.now()}`,
+      company_id: data.company_id,
+      name: data.name,
+      cnpj: data.cnpj,
+      contact_name: data.contact_name,
+      contact_phone: data.contact_phone,
+      contact_email: data.contact_email,
+      address: data.address,
+      notes: data.notes,
+      active: data.active ?? true,
+      created_at: now,
+      updated_at: now,
+    };
+    _clients.push(client);
+    return client;
+  },
+  async update(id: string, data: Partial<CreateClientInput>): Promise<Client> {
+    const idx = _clients.findIndex(c => c.id === id);
+    if (idx === -1) throw new Error('Client not found');
+    _clients[idx] = { ..._clients[idx], ...data, updated_at: new Date().toISOString() };
+    return _clients[idx];
+  },
+};
 
 // ==================== POSTS ====================
 const postsRepo = {
@@ -471,6 +521,7 @@ const schedulesRepo = {
 // ==================== FACTORY ====================
 export function createDemoAdapter(): IDataProvider {
   return {
+    clients: clientsRepo,
     posts: postsRepo,
     employees: employeesRepo,
     presence: presenceRepo,

@@ -10,6 +10,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import type {
   IDataProvider,
+  ClientFilters,
+  CreateClientInput,
   PostFilters,
   EmployeeFilters,
   PresenceFilters,
@@ -38,6 +40,7 @@ import type {
 } from '../data-provider';
 import { checkGeofence, haversineDistance } from '../../geo';
 import type {
+  Client,
   DashboardSummary,
   FTRequest,
   Occurrence,
@@ -57,6 +60,11 @@ function assertNoError(error: unknown, context: string): void {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${context}: ${message}`);
   }
+}
+
+
+function asClient(row: DbRow): Client {
+  return row as unknown as Client;
 }
 
 function asPost(row: DbRow): Post {
@@ -197,6 +205,78 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
   console.log(`[OP5] Supabase adapter initialized for: ${url.substring(0, 30)}...`);
 
   return {
+    clients: {
+      async list(filters?: ClientFilters): Promise<Client[]> {
+        let query = supabase
+          .from('clients')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (filters?.company_id) query = query.eq('company_id', filters.company_id);
+
+        if (filters?.active !== undefined) {
+          query = query.eq('active', filters.active);
+        } else {
+          query = query.eq('active', true);
+        }
+
+        if (filters?.search) {
+          const term = filters.search.replace(/[%_,]/g, '').trim();
+          if (term) {
+            query = query.or(`name.ilike.%${term}%,cnpj.ilike.%${term}%,contact_name.ilike.%${term}%,contact_email.ilike.%${term}%`);
+          }
+        }
+
+        const { data, error } = await query;
+        assertNoError(error, 'Erro ao listar clientes');
+        return ((data ?? []) as DbRow[]).map(asClient);
+      },
+
+      async getById(id: string): Promise<Client | null> {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        assertNoError(error, 'Erro ao buscar cliente');
+        return data ? asClient(data as DbRow) : null;
+      },
+
+      async create(data: CreateClientInput): Promise<Client> {
+        const { data: row, error } = await supabase
+          .from('clients')
+          .insert({
+            company_id: data.company_id,
+            name: data.name,
+            cnpj: data.cnpj,
+            contact_name: data.contact_name,
+            contact_phone: data.contact_phone,
+            contact_email: data.contact_email,
+            address: data.address,
+            notes: data.notes,
+            active: data.active ?? true,
+          })
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao criar cliente');
+        return asClient(row as DbRow);
+      },
+
+      async update(id: string, data: Partial<CreateClientInput>): Promise<Client> {
+        const { data: row, error } = await supabase
+          .from('clients')
+          .update({ ...data, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao atualizar cliente');
+        return asClient(row as DbRow);
+      },
+    },
+
     posts: {
       async list(filters?: PostFilters): Promise<Post[]> {
         let query = supabase.from('posts').select('*').order('name', { ascending: true });

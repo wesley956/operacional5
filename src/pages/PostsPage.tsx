@@ -5,7 +5,7 @@
 import { useState, type FormEvent } from 'react';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { OperationalStatusBadge } from '@/components/DashboardComponents';
-import { useEmployees, usePosts } from '@/hooks';
+import { useClients, useEmployees, usePosts } from '@/hooks';
 import { formatDistance } from '@/lib/geo';
 import { cn } from '@/lib/utils';
 import { MapPin, Building2, Wifi, WifiOff, QrCode, Cpu, Plus, Edit, Eye } from 'lucide-react';
@@ -20,8 +20,11 @@ export function PostsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const { posts, getStatus, loading, createPost, updatePost } = usePosts();
+  const { clients, loading: clientsLoading } = useClients({ active: true });
   const { employees } = useEmployees({ active: true });
   const getProfileName = (profileId: string) => employees.find(e => e.id === profileId)?.name ?? 'Não encontrado';
+  const clientOptions = clients.map(client => ({ value: client.id, label: client.name }));
+  const getClientName = (clientId: string) => clients.find(client => client.id === clientId)?.name ?? 'Cliente não encontrado';
 
   const handleCreatePost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -146,6 +149,11 @@ export function PostsPage() {
       ),
     },
     {
+      key: 'client',
+      header: 'Cliente',
+      render: (p: Post) => <span className="text-sm text-gray-600">{getClientName(p.client_id)}</span>,
+    },
+    {
       key: 'staff',
       header: 'Equipe',
       render: (p: Post) => {
@@ -208,7 +216,7 @@ export function PostsPage() {
         title="Postos"
         subtitle={loading ? 'Carregando postos...' : `${posts.length} postos ativos`}
         actions={
-          <Button onClick={() => setShowNewModal(true)}>
+          <Button onClick={() => setShowNewModal(true)} disabled={clientsLoading || clientOptions.length === 0}>
             <Plus className="w-4 h-4 mr-1" /> Novo Posto
           </Button>
         }
@@ -226,7 +234,7 @@ export function PostsPage() {
 
       {/* Post Details Modal */}
       <Modal open={!!selectedPost} onClose={() => setSelectedPost(null)} title="Detalhes do Posto" size="lg">
-        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} />}
+        {selectedPost && <PostDetails post={selectedPost} getStatus={getStatus} getProfileName={getProfileName} getClientName={getClientName} />}
       </Modal>
 
 
@@ -264,10 +272,12 @@ export function PostsPage() {
               label="Cliente"
               required
               defaultValue={editingPost.client_id}
-              options={[
-                { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
-              ]}
+              options={clientOptions}
+              placeholder={clientsLoading ? 'Carregando clientes...' : 'Selecione...'}
             />
+            {clientOptions.length === 0 && !clientsLoading && (
+              <p className="text-xs text-red-600">Cadastre um cliente antes de vincular este posto.</p>
+            )}
 
             <div className="flex items-center gap-2">
               <input type="checkbox" id="edit-post-indoor" name="indoor_mode" className="rounded" defaultChecked={editingPost.indoor_mode} />
@@ -323,12 +333,13 @@ export function PostsPage() {
             id="post-client"
             name="client_id"
             label="Cliente"
-            placeholder="Selecione..."
+            placeholder={clientsLoading ? 'Carregando clientes...' : 'Selecione...'}
             required
-            options={[
-              { value: '22222222-2222-4222-8222-222222222222', label: 'Cliente Demo Plaza' },
-            ]}
+            options={clientOptions}
           />
+          {clientOptions.length === 0 && !clientsLoading && (
+            <p className="text-xs text-red-600">Cadastre um cliente na página Clientes antes de criar um posto.</p>
+          )}
 
           <div className="flex items-center gap-2">
             <input type="checkbox" id="post-indoor" name="indoor_mode" className="rounded" />
@@ -359,7 +370,7 @@ export function PostsPage() {
   );
 }
 
-function PostDetails({ post, getStatus, getProfileName }: { post: Post; getStatus: (id: string) => OperationalPostStatus | undefined; getProfileName: (id: string) => string }) {
+function PostDetails({ post, getStatus, getProfileName, getClientName }: { post: Post; getStatus: (id: string) => OperationalPostStatus | undefined; getProfileName: (id: string) => string; getClientName: (id: string) => string }) {
   const status = getStatus(post.id);
 
   return (
@@ -378,6 +389,9 @@ function PostDetails({ post, getStatus, getProfileName }: { post: Post; getStatu
       </div>
 
       <div className="grid grid-cols-2 gap-4">
+        <InfoItem label="Cliente" icon={<Building2 className="w-4 h-4" />}>
+          {getClientName(post.client_id)}
+        </InfoItem>
         <InfoItem label="GPS" icon={<MapPin className="w-4 h-4" />}>
           {post.lat.toFixed(4)}, {post.lng.toFixed(4)}
         </InfoItem>

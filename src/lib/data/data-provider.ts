@@ -112,6 +112,8 @@ export interface ISchedulesRepository {
   list(filters?: ScheduleFilters): Promise<Schedule[]>;
   getByEmployee(employeeId: string): Promise<Schedule[]>;
   create(data: Omit<Schedule, 'id' | 'created_at'>): Promise<Schedule>;
+  update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule>;
+  delete(id: string): Promise<void>;
   detectConflicts(employeeId: string): Promise<ScheduleConflictData[]>;
 }
 

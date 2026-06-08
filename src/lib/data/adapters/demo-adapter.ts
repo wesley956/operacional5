@@ -513,6 +513,16 @@ const schedulesRepo = {
     _schedules.push(sched);
     return sched;
   },
+  async update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule> {
+    const index = _schedules.findIndex(s => s.id === id);
+    if (index === -1) throw new Error('Escala não encontrada.');
+
+    _schedules[index] = { ..._schedules[index], ...data };
+    return _schedules[index];
+  },
+  async delete(id: string): Promise<void> {
+    _schedules = _schedules.filter(s => s.id !== id);
+  },
   async detectConflicts(_employeeId: string): Promise<ScheduleConflictData[]> {
     return []; // Demo: sem conflitos
   },

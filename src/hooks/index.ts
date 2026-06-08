@@ -615,7 +615,53 @@ export function useSchedules(filters?: ScheduleFilters) {
     return schedule;
   }, [profile.company_id, refresh]);
 
-  return { schedules, loading, refresh, createSchedule };
+  const updateSchedule = useCallback(async (
+    id: string,
+    data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>
+  ): Promise<Schedule> => {
+    const dp = getDataProvider();
+    const schedule = await dp.schedules.update(id, data);
+    setSchedules(current => current
+      .map(item => (item.id === id ? schedule : item))
+      .sort((a, b) => new Date(a.shift_start).getTime() - new Date(b.shift_start).getTime())
+    );
+    await refresh();
+    return schedule;
+  }, [refresh]);
+
+  const deactivateSchedule = useCallback((id: string): Promise<Schedule> => updateSchedule(id, {
+    is_active: false,
+    status: 'inactive',
+  }), [updateSchedule]);
+
+  const reactivateSchedule = useCallback((id: string): Promise<Schedule> => updateSchedule(id, {
+    is_active: true,
+    status: 'active',
+  }), [updateSchedule]);
+
+  const deleteSchedule = useCallback(async (id: string): Promise<void> => {
+    const dp = getDataProvider();
+    await dp.schedules.delete(id);
+    setSchedules(current => current.filter(item => item.id !== id));
+    await refresh();
+  }, [refresh]);
+
+  const detectConflicts = useCallback(async (employeeId: string) => {
+    const dp = getDataProvider();
+    return dp.schedules.detectConflicts(employeeId);
+  }, []);
+
+  return {
+    schedules,
+    loading,
+    refresh,
+    createSchedule,
+    updateSchedule,
+    deactivateSchedule,
+    reactivateSchedule,
+    deleteSchedule,
+    detectConflicts,
+  };
 }
 
 // ==================== USE OFFLINE STATUS ====================

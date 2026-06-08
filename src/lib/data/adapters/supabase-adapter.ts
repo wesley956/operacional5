@@ -1437,6 +1437,39 @@ export function createSupabaseAdapter(url: string, _key: string): IDataProvider 
         return asSchedule(row as DbRow);
       },
 
+      async update(id: string, data: Partial<Omit<Schedule, 'id' | 'company_id' | 'created_at'>>): Promise<Schedule> {
+        const payload: Record<string, unknown> = {};
+        if (data.post_id !== undefined) payload.post_id = data.post_id;
+        if (data.employee_id !== undefined) payload.employee_id = data.employee_id;
+        if (data.shift_start !== undefined) payload.shift_start = data.shift_start;
+        if (data.shift_end !== undefined) payload.shift_end = data.shift_end;
+        if (data.regime !== undefined) payload.regime = data.regime;
+        if (data.cycle_reference_date !== undefined) payload.cycle_reference_date = data.cycle_reference_date;
+        if (data.weekdays !== undefined) payload.weekdays = data.weekdays;
+        if (data.template_id !== undefined) payload.template_id = data.template_id;
+        if (data.is_active !== undefined) payload.is_active = data.is_active;
+        if (data.status !== undefined) payload.status = data.status;
+
+        const { data: row, error } = await supabase
+          .from('schedules')
+          .update(payload)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        assertNoError(error, 'Erro ao atualizar escala');
+        return asSchedule(row as DbRow);
+      },
+
+      async delete(id: string): Promise<void> {
+        const { error } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('id', id);
+
+        assertNoError(error, 'Erro ao excluir escala');
+      },
+
       async detectConflicts(employeeId: string): Promise<ScheduleConflictData[]> {
         const schedules = await this.getByEmployee(employeeId);
         const activeSchedules = schedules

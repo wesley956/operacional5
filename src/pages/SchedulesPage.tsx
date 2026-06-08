@@ -8,7 +8,7 @@ import { Avatar } from '@/components/Layout';
 import { useEmployees, usePosts, useSchedules } from '@/hooks';
 import { formatDateTime, formatDate } from '@/lib/utils';
 import { ROLE_LABELS, type RegimeTrabalho } from '@/lib/types';
-import { CalendarDays, Plus, AlertTriangle, Clock } from 'lucide-react';
+import { CalendarDays, Plus, AlertTriangle, Clock, Edit2, Power, Trash2 } from 'lucide-react';
 
 
 
@@ -72,13 +72,28 @@ export function SchedulesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [calendarRangeDays, setCalendarRangeDays] = useState<'7' | '14' | '30'>('7');
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [postFilter, setPostFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-  const { schedules, loading, createSchedule } = useSchedules();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const {
+    schedules,
+    loading,
+    createSchedule,
+    updateSchedule,
+    deactivateSchedule,
+    reactivateSchedule,
+    deleteSchedule,
+    detectConflicts,
+  } = useSchedules();
   const { employees } = useEmployees({ active: true });
   const { posts } = usePosts();
 
@@ -97,7 +112,8 @@ export function SchedulesPage() {
     const employeeName = getProfileName(schedule.employee_id).toLowerCase();
     const matchesEmployee = !normalizedEmployeeSearch || employeeName.includes(normalizedEmployeeSearch);
     const matchesPost = !postFilter || schedule.post_id === postFilter;
-    return matchesEmployee && matchesPost;
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? schedule.is_active : !schedule.is_active);
+    return matchesEmployee && matchesPost && matchesStatus;
   });
 
   const todayStart = new Date();
@@ -152,13 +168,122 @@ export function SchedulesPage() {
         status: 'active',
       });
 
+      const conflicts = await detectConflicts(created.employee_id);
+
       formElement.reset();
-      setCreateSuccess(`Escala criada para ${getProfileName(created.employee_id)}.`);
+      setCreateSuccess(
+        conflicts.length > 0
+          ? `Escala criada para ${getProfileName(created.employee_id)}, mas há ${conflicts.length} conflito(s) para revisar.`
+          : `Escala criada para ${getProfileName(created.employee_id)}.`
+      );
       setShowNewModal(false);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'Erro ao criar escala.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleUpdateSchedule = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected) return;
+
+    const formElement = event.currentTarget;
+    setActionError(null);
+    setActionSuccess(null);
+    setSavingEdit(true);
+
+    try {
+      const form = new FormData(formElement);
+
+      const employeeId = String(form.get('employee_id') ?? '').trim();
+      const postId = String(form.get('post_id') ?? '').trim();
+      const regime = String(form.get('regime') ?? '').trim() as RegimeTrabalho;
+      const shiftStartValue = String(form.get('shift_start') ?? '').trim();
+      const shiftEndValue = String(form.get('shift_end') ?? '').trim();
+      const cycleReferenceDate = String(form.get('cycle_reference_date') || shiftStartValue.slice(0, 10));
+
+      if (!employeeId) throw new Error('Selecione o funcionário.');
+      if (!postId) throw new Error('Selecione o posto.');
+      if (!regime) throw new Error('Selecione o regime.');
+      if (!shiftStartValue) throw new Error('Informe o início do turno.');
+      if (!shiftEndValue) throw new Error('Informe o fim do turno.');
+
+      const shiftStart = new Date(shiftStartValue);
+      const shiftEnd = new Date(shiftEndValue);
+
+      if (Number.isNaN(shiftStart.getTime()) || Number.isNaN(shiftEnd.getTime())) {
+        throw new Error('Datas do turno inválidas.');
+      }
+
+      if (shiftStart >= shiftEnd) {
+        throw new Error('O fim do turno precisa ser depois do início.');
+      }
+
+      const updated = await updateSchedule(selected.id, {
+        post_id: postId,
+        employee_id: employeeId,
+        shift_start: shiftStart.toISOString(),
+        shift_end: shiftEnd.toISOString(),
+        regime,
+        cycle_reference_date: cycleReferenceDate,
+      });
+
+      const conflicts = await detectConflicts(updated.employee_id);
+
+      setActionSuccess(
+        conflicts.length > 0
+          ? `Escala atualizada, mas há ${conflicts.length} conflito(s) para revisar.`
+          : 'Escala atualizada com sucesso.'
+      );
+      setShowEditModal(false);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Erro ao atualizar escala.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleToggleSchedule = async () => {
+    if (!selected) return;
+    const verb = selected.is_active ? 'desativar' : 'reativar';
+    if (!window.confirm(`Confirmar ${verb} esta escala?`)) return;
+
+    setActionError(null);
+    setActionSuccess(null);
+    setActionLoading(true);
+
+    try {
+      if (selected.is_active) {
+        await deactivateSchedule(selected.id);
+        setActionSuccess('Escala desativada com sucesso.');
+      } else {
+        await reactivateSchedule(selected.id);
+        setActionSuccess('Escala reativada com sucesso.');
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Erro ao alterar status da escala.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteSchedule = async () => {
+    if (!selected) return;
+    if (!window.confirm('Excluir esta escala definitivamente? Use desativar quando precisar preservar histórico.')) return;
+
+    setActionError(null);
+    setActionSuccess(null);
+    setActionLoading(true);
+
+    try {
+      await deleteSchedule(selected.id);
+      setSelectedId(null);
+      setActionSuccess('Escala excluída com sucesso.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Erro ao excluir escala.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -245,8 +370,20 @@ export function SchedulesPage() {
         </div>
       )}
 
+      {actionSuccess && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
       <Card className="mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Input
             id="schedule-employee-search"
             label="Buscar funcionário"
@@ -264,6 +401,18 @@ export function SchedulesPage() {
             options={posts.map(post => ({ value: post.id, label: post.name }))}
           />
 
+          <SelectField
+            id="schedule-status-filter"
+            label="Status"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as 'active' | 'inactive' | 'all')}
+            options={[
+              { value: 'active', label: 'Ativas' },
+              { value: 'inactive', label: 'Inativas' },
+              { value: 'all', label: 'Todas' },
+            ]}
+          />
+
           <div className="flex items-end">
             <Button
               type="button"
@@ -272,6 +421,7 @@ export function SchedulesPage() {
               onClick={() => {
                 setEmployeeSearch('');
                 setPostFilter('');
+                setStatusFilter('active');
               }}
             >
               Limpar filtros
@@ -461,7 +611,115 @@ export function SchedulesPage() {
                 </p>
               </div>
             </div>
+
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setActionError(null);
+                  setActionSuccess(null);
+                  setShowEditModal(true);
+                }}
+              >
+                <Edit2 className="w-4 h-4 mr-1" /> Editar
+              </Button>
+              <Button
+                type="button"
+                variant={selected.is_active ? 'outline' : 'primary'}
+                onClick={handleToggleSchedule}
+                loading={actionLoading}
+              >
+                <Power className="w-4 h-4 mr-1" /> {selected.is_active ? 'Desativar' : 'Reativar'}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={handleDeleteSchedule}
+                loading={actionLoading}
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> Excluir
+              </Button>
+            </div>
           </div>
+        )}
+      </Modal>
+
+      {/* Edit Schedule Modal */}
+      <Modal open={showEditModal && !!selected} onClose={() => setShowEditModal(false)} title="Editar Escala">
+        {selected && (
+          <form onSubmit={handleUpdateSchedule} className="space-y-4">
+            <SelectField
+              id="edit-sched-employee"
+              name="employee_id"
+              label="Funcionário"
+              placeholder="Selecione..."
+              required
+              defaultValue={selected.employee_id}
+              options={employees
+                .filter(p => ['operador', 'lider'].includes(p.role))
+                .map(p => ({ value: p.id, label: `${p.name} — ${ROLE_LABELS[p.role]}` }))}
+            />
+
+            <SelectField
+              id="edit-sched-post"
+              name="post_id"
+              label="Posto"
+              placeholder="Selecione..."
+              required
+              defaultValue={selected.post_id}
+              options={posts.map(p => ({ value: p.id, label: p.name }))}
+            />
+
+            <SelectField
+              id="edit-sched-regime"
+              name="regime"
+              label="Regime"
+              placeholder="Selecione..."
+              required
+              defaultValue={selected.regime}
+              options={Object.entries(REGIME_LABELS).map(([value, label]) => ({ value, label }))}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                id="edit-sched-start"
+                name="shift_start"
+                type="datetime-local"
+                label="Início do turno"
+                defaultValue={toDateTimeLocalValue(new Date(selected.shift_start))}
+                required
+              />
+              <Input
+                id="edit-sched-end"
+                name="shift_end"
+                type="datetime-local"
+                label="Fim do turno"
+                defaultValue={toDateTimeLocalValue(new Date(selected.shift_end))}
+                required
+              />
+            </div>
+
+            <Input
+              id="edit-sched-cycle-ref"
+              name="cycle_reference_date"
+              type="date"
+              label="Data referência do ciclo"
+              defaultValue={selected.cycle_reference_date.slice(0, 10)}
+            />
+
+            <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+              <p className="text-xs text-yellow-700">
+                Após salvar, o sistema verifica conflitos de horário para o funcionário selecionado.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" className="flex-1" loading={savingEdit}>Salvar Alterações</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowEditModal(false)}>Cancelar</Button>
+            </div>
+          </form>
         )}
       </Modal>
 

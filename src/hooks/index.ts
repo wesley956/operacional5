@@ -189,7 +189,28 @@ export function useEmployees(filters?: EmployeeFilters) {
     return createdProfile;
   }, [refresh]);
 
-  return { employees, loading, refresh, createEmployee };
+  const updateEmployee = useCallback(async (id: string, data: Partial<Profile>): Promise<Profile> => {
+    const dp = getDataProvider();
+    const updatedProfile = await dp.employees.update(id, data);
+
+    setEmployees(current => {
+      const next = current.map(employee => employee.id === id ? updatedProfile : employee);
+      const shouldKeep = filters?.active === undefined || updatedProfile.active === filters.active;
+
+      if (!current.some(employee => employee.id === id) && shouldKeep) {
+        next.push(updatedProfile);
+      }
+
+      return next
+        .filter(employee => filters?.active === undefined || employee.active === filters.active)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    await refresh();
+    return updatedProfile;
+  }, [refresh, filterKey]);
+
+  return { employees, loading, refresh, createEmployee, updateEmployee };
 }
 
 // ==================== USE PRESENCE ====================

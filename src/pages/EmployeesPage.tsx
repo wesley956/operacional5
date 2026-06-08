@@ -2,14 +2,14 @@
 // OPERACIONAL5 — Página de Funcionários
 // ============================================================
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageHeader, Card, Badge, DataTable, Modal, Button, Input, SelectField } from '@/components/ui';
 import { Avatar } from '@/components/Layout';
 import { useEmployees } from '@/hooks';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { ROLE_LABELS, type Role, type Profile } from '@/lib/types';
-import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX, KeyRound, Save } from 'lucide-react';
-
+import { Users, Plus, Eye, Phone, Mail, MapPin, UserCheck, UserX, KeyRound, Save, Pencil, RotateCcw } from 'lucide-react';
 
 function formatUnknownError(value: unknown): string {
   if (!value) return 'Erro desconhecido.';
@@ -32,18 +32,32 @@ const ROLE_BADGES: Record<Role, 'info' | 'success' | 'warning' | 'danger' | 'def
   operador: 'default',
 };
 
+const ACTIVE_FILTER_OPTIONS = [
+  { value: 'active', label: 'Ativos' },
+  { value: 'inactive', label: 'Inativos' },
+  { value: 'all', label: 'Todos' },
+];
+
+type ActiveFilter = 'active' | 'inactive' | 'all';
+
 type FieldAccessProfile = Profile & {
   field_code?: string | null;
   field_code_updated_at?: string | null;
 };
 
 export function EmployeesPage() {
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>('');
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('active');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileActionError, setProfileActionError] = useState<string | null>(null);
+  const [profileActionSuccess, setProfileActionSuccess] = useState<string | null>(null);
 
   const [fieldCode, setFieldCode] = useState('');
   const [fieldPin, setFieldPin] = useState('');
@@ -51,7 +65,11 @@ export function EmployeesPage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [fieldSuccess, setFieldSuccess] = useState<string | null>(null);
 
-  const { employees, loading, refresh, createEmployee } = useEmployees({ active: true });
+  const employeeFilters = useMemo(() => ({
+    active: activeFilter === 'all' ? undefined : activeFilter === 'active',
+  }), [activeFilter]);
+
+  const { employees, loading, refresh, createEmployee, updateEmployee } = useEmployees(employeeFilters);
   const filtered = roleFilter ? employees.filter(e => e.role === roleFilter) : employees;
   const selected = selectedId ? employees.find(e => e.id === selectedId) as FieldAccessProfile | undefined : null;
 
@@ -61,6 +79,9 @@ export function EmployeesPage() {
       setFieldPin('');
       setFieldError(null);
       setFieldSuccess(null);
+      setProfileActionError(null);
+      setProfileActionSuccess(null);
+      setShowEditModal(false);
       return;
     }
 
@@ -68,6 +89,8 @@ export function EmployeesPage() {
     setFieldPin('');
     setFieldError(null);
     setFieldSuccess(null);
+    setProfileActionError(null);
+    setProfileActionSuccess(null);
   }, [selected?.id, selected?.field_code]);
 
   const handleCreateEmployee = async (event: FormEvent<HTMLFormElement>) => {
@@ -105,6 +128,7 @@ export function EmployeesPage() {
 
       formElement.reset();
       setRoleFilter('');
+      setActiveFilter('active');
       setCreateSuccess(`Funcionário ${employee.name} cadastrado com sucesso.`);
       setShowNewModal(false);
     } catch (error) {
@@ -113,6 +137,69 @@ export function EmployeesPage() {
       setCreating(false);
     }
   };
+
+  async function handleUpdateEmployee(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const email = String(form.get('email') ?? '').trim();
+    const phone = String(form.get('phone') ?? '').trim();
+    const role = String(form.get('role') ?? '').trim() as Role;
+    const regimeTrabalho = String(form.get('regime_trabalho') ?? selected.regime_trabalho).trim() as Profile['regime_trabalho'];
+    const dataReferenciaCiclo = String(form.get('data_referencia_ciclo') || selected.data_referencia_ciclo || '2024-01-01');
+
+    setSavingProfile(true);
+    setProfileActionError(null);
+    setProfileActionSuccess(null);
+
+    try {
+      if (!name) throw new Error('Informe o nome do funcionário.');
+      if (!role) throw new Error('Selecione o cargo.');
+
+      const updated = await updateEmployee(selected.id, {
+        name,
+        email: email || undefined,
+        phone: phone || undefined,
+        role,
+        ft_available: form.get('ft_available') === 'on',
+        regime_trabalho: regimeTrabalho,
+        data_referencia_ciclo: dataReferenciaCiclo,
+      });
+
+      setProfileActionSuccess(`Dados de ${updated.name} atualizados com sucesso.`);
+      setShowEditModal(false);
+    } catch (error) {
+      setProfileActionError(formatUnknownError(error));
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function handleToggleActive(employee: Profile) {
+    const nextActive = !employee.active;
+    const verb = nextActive ? 'reativar' : 'desativar';
+    const confirmed = window.confirm(`Deseja ${verb} o funcionário ${employee.name}?`);
+    if (!confirmed) return;
+
+    setSavingProfile(true);
+    setProfileActionError(null);
+    setProfileActionSuccess(null);
+
+    try {
+      await updateEmployee(employee.id, { active: nextActive });
+      setProfileActionSuccess(`Funcionário ${nextActive ? 'reativado' : 'desativado'} com sucesso.`);
+
+      if (activeFilter !== 'all') {
+        setSelectedId(null);
+      }
+    } catch (error) {
+      setProfileActionError(formatUnknownError(error));
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function handleSaveFieldAccess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -241,9 +328,16 @@ export function EmployeesPage() {
     <div>
       <PageHeader
         title="Funcionários"
-        subtitle={loading ? 'Carregando funcionários...' : `${employees.length} funcionários ativos`}
+        subtitle={loading ? 'Carregando funcionários...' : `${filtered.length} funcionário(s) exibido(s)`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <SelectField
+              id="active-filter"
+              options={ACTIVE_FILTER_OPTIONS}
+              value={activeFilter}
+              onChange={e => setActiveFilter(e.target.value as ActiveFilter)}
+              className="w-32"
+            />
             <SelectField
               id="role-filter"
               placeholder="Todos os cargos"
@@ -282,13 +376,34 @@ export function EmployeesPage() {
       <Modal open={!!selected} onClose={() => setSelectedId(null)} title="Detalhes do Funcionário">
         {selected && (
           <div className="space-y-5">
-            <div className="flex items-center gap-4">
-              <Avatar name={selected.name} size="lg" />
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">{selected.name}</h3>
-                <Badge variant={ROLE_BADGES[selected.role]}>{ROLE_LABELS[selected.role]}</Badge>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <Avatar name={selected.name} size="lg" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{selected.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <Badge variant={ROLE_BADGES[selected.role]}>{ROLE_LABELS[selected.role]}</Badge>
+                    {selected.active ? <Badge variant="success">Ativo</Badge> : <Badge variant="default">Inativo</Badge>}
+                  </div>
+                </div>
               </div>
+
+              <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>
+                <Pencil className="w-4 h-4 mr-1" /> Editar
+              </Button>
             </div>
+
+            {profileActionError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {profileActionError}
+              </div>
+            )}
+
+            {profileActionSuccess && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                {profileActionSuccess}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <DetailRow icon={<Mail className="w-4 h-4 text-gray-400" />} label="Email" value={selected.email} />
@@ -346,15 +461,91 @@ export function EmployeesPage() {
               </Button>
             </form>
 
-            <div className="flex gap-2 pt-2">
-              <Button variant="secondary" className="flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                disabled={!selected.phone}
+                onClick={() => {
+                  if (selected.phone) window.location.href = `tel:${selected.phone.replace(/\D/g, '')}`;
+                }}
+              >
                 <Phone className="w-4 h-4 mr-1" /> Ligar
               </Button>
-              <Button variant="secondary" className="flex-1">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => navigate(`/map?employee_id=${selected.id}`)}
+              >
                 <MapPin className="w-4 h-4 mr-1" /> Ver Localização
+              </Button>
+              <Button
+                variant={selected.active ? 'danger' : 'primary'}
+                className="sm:col-span-2"
+                loading={savingProfile}
+                onClick={() => void handleToggleActive(selected)}
+              >
+                {selected.active ? <UserX className="w-4 h-4 mr-1" /> : <RotateCcw className="w-4 h-4 mr-1" />}
+                {selected.active ? 'Desativar funcionário' : 'Reativar funcionário'}
               </Button>
             </div>
           </div>
+        )}
+      </Modal>
+
+      <Modal open={!!selected && showEditModal} onClose={() => setShowEditModal(false)} title="Editar Funcionário">
+        {selected && (
+          <form onSubmit={handleUpdateEmployee} className="space-y-4">
+            {profileActionError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {profileActionError}
+              </div>
+            )}
+
+            <Input id="edit-emp-name" name="name" label="Nome completo" defaultValue={selected.name} required />
+            <Input id="edit-emp-email" name="email" label="Email" type="email" defaultValue={selected.email ?? ''} />
+            <Input id="edit-emp-phone" name="phone" label="Telefone" defaultValue={selected.phone ?? ''} />
+
+            <SelectField
+              id="edit-emp-role"
+              name="role"
+              label="Cargo"
+              defaultValue={selected.role}
+              required
+              options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))}
+            />
+
+            <SelectField
+              id="edit-emp-regime"
+              name="regime_trabalho"
+              label="Regime de trabalho"
+              defaultValue={selected.regime_trabalho}
+              options={[
+                { value: '12x36', label: '12x36' },
+                { value: '12x36_noturno', label: '12x36 Noturno' },
+                { value: '24x48', label: '24x48' },
+                { value: 'custom', label: 'Personalizado' },
+              ]}
+            />
+
+            <Input
+              id="edit-emp-cycle-date"
+              name="data_referencia_ciclo"
+              label="Data referência do ciclo"
+              type="date"
+              defaultValue={selected.data_referencia_ciclo || '2024-01-01'}
+            />
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-emp-ft" name="ft_available" className="rounded" defaultChecked={selected.ft_available} />
+              <label htmlFor="edit-emp-ft" className="text-sm text-gray-700">Disponível para FT</label>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" className="flex-1" loading={savingProfile}>Salvar alterações</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowEditModal(false)}>Cancelar</Button>
+            </div>
+          </form>
         )}
       </Modal>
 
